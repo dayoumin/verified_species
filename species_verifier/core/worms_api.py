@@ -4,6 +4,7 @@ from requests.exceptions import RequestException, JSONDecodeError
 import time
 import os
 from dotenv import load_dotenv
+from typing import List, Dict, Any, Union, Tuple, Optional
 
 # 설정 로드 (core 모듈 내에서도 필요할 수 있음)
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env')) # 프로젝트 루트의 .env 로드
@@ -99,3 +100,91 @@ def get_aphia_record(aphia_id):
 
     print(f"[Debug WoRMS API] Returning for AphiaRecord {aphia_id}: {record}") # 최종 반환 값 로그 추가
     return record
+    
+def verify_species_list(species_list: List[Union[str, Tuple[str, str, str]]]) -> List[Dict[str, Any]]:
+    """
+    여러 종 학명의 유효성을 검증합니다.
+    
+    Args:
+        species_list: 검증할 종 목록 (문자열 또는 [입력명, 학명, 한글명] 튜플 형태)
+            
+    Returns:
+        검증 결과 목록 (각 종별 결과 사전)
+    """
+    results = []
+    
+    for item in species_list:
+        # 입력 형식에 따라 다르게 처리
+        if isinstance(item, tuple) and len(item) >= 2:
+            # 튜플 형태: (입력명, 학명, [선택적으로 한글명])
+            input_name = item[0]
+            scientific_name = item[1]
+            korean_name = item[2] if len(item) > 2 else ""
+        else:
+            # 문자열 형태 (학명)
+            input_name = item
+            scientific_name = item
+            korean_name = ""
+        
+        # 기본 결과 딕셔너리 생성
+        result = {
+            'input_name': input_name,
+            'scientific_name': scientific_name,
+            'is_verified': False,
+            'worms_status': 'N/A',
+            'similar_name': '-',
+            'worms_id': '-',
+            'worms_link': '-',
+            'worms_classification': {},
+            'wiki_summary': '-',
+            'korean_name': korean_name
+        }
+        
+        # WoRMS ID 조회
+        aphia_id = get_aphia_id(scientific_name)
+        
+        # 에러 처리
+        if isinstance(aphia_id, dict) and 'error' in aphia_id:
+            result['worms_status'] = aphia_id['error']
+            results.append(result)
+            continue
+        
+        # 유효한 ID가 반환되면 상세 정보 조회
+        if isinstance(aphia_id, int) and aphia_id > 0:
+            record = get_aphia_record(aphia_id)
+            
+            # 레코드 정보로 결과 업데이트
+            if record and isinstance(record, dict):
+                if 'error' in record:
+                    result['worms_status'] = record['error']
+                else:
+                    result['is_verified'] = True
+                    result['worms_status'] = 'WoRMS 등재 확인됨'
+                    result['worms_id'] = str(aphia_id)
+                    result['worms_link'] = f'https://www.marinespecies.org/aphia.php?p=taxdetails&id={aphia_id}'
+                    
+                    # 정확한 학명으로 업데이트
+                    if 'scientificname' in record and record['scientificname']:
+                        valid_scientific_name = record['scientificname']
+                        
+                        # 입력 학명과 유효 학명이 다른 경우
+                        if valid_scientific_name.lower() != scientific_name.lower():
+                            result['similar_name'] = valid_scientific_name
+                            result['worms_status'] = f'수정된 학명: {valid_scientific_name}'
+                        
+                        result['scientific_name'] = valid_scientific_name
+                    
+                    # 분류 정보 추가
+                    taxonomy = {}
+                    for level in ['kingdom', 'phylum', 'class', 'order', 'family', 'genus']:
+                        if level in record and record[level]:
+                            taxonomy[level] = record[level]
+                    
+                    result['worms_classification'] = taxonomy
+        else:
+            # 유효한 ID가 없는 경우
+            result['worms_status'] = 'WoRMS 등록되지 않음'
+            
+        results.append(result)
+    
+    return results

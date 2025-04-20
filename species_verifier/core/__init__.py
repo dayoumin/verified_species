@@ -7,4 +7,4 @@ from .gemini_api import format_worms_result_with_gemini
 #     get_wiki_cache,
 #     upsert_wiki_data
 # )
-from .verifier import check_scientific_name
+from .verifier import clean_scientific_name as check_scientific_name

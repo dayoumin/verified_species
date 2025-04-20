@@ -18,19 +18,29 @@ import time
 import uuid
 import numpy as np
 
+# --- 설정 로드 --- 
+import config # config 모듈 임포트
+
+# --- 모듈 임포트 ---
+# 핵심 검증 로직 및 유틸리티 함수 임포트
+from species_verifier.core import verifier 
+from species_verifier.core import wiki
+from species_verifier.utils import helpers
+
 # --- 시간 제한 설정 (유지) ---
+# config.py로 이동 고려
 EXPIRY_DAYS = 547
 CONTACT_EMAIL = "ecomarin@naver.com"
 DATE_FILE_NAME = ".verifier_expiry_date"
 
-# --- WoRMS API 정보 (추가) ---
-WORMS_API_BASE_URL = "https://www.marinespecies.org/rest"
+# --- WoRMS API 정보 (config 사용) ---
+# WORMS_API_BASE_URL = "https://www.marinespecies.org/rest" # 제거 (config 사용)
 
-# --- 경로 설정 ---
+# --- 경로 설정 (config 사용) ---
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-# 데이터 파일 경로 설정
-data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
-mappings_file = os.path.join(data_dir, 'korean_scientific_mappings.json')
+# 데이터 파일 경로 설정 (config 사용)
+# data_dir = os.path.join(os.path.dirname(__file__), '..', 'data') # 제거 (config 사용)
+# mappings_file = os.path.join(data_dir, 'korean_scientific_mappings.json') # 제거 (config 사용)
 
 # --- 기본 매핑 정보 (파일이 없을 경우 사용) ---
 DEFAULT_MAPPINGS = {
@@ -67,9 +77,10 @@ DEFAULT_MAPPINGS = {
 def load_korean_mappings():
     """JSON 파일에서 한글 국명-학명 매핑 정보를 로드합니다."""
     try:
-        if os.path.exists(mappings_file):
-            with open(mappings_file, 'r', encoding='utf-8') as f:
-                print(f"[Info] 매핑 파일 로드: {mappings_file}")
+        # config에서 파일 경로 사용
+        if os.path.exists(config.MAPPINGS_FILE_PATH):
+            with open(config.MAPPINGS_FILE_PATH, 'r', encoding='utf-8') as f:
+                print(f"[Info] 매핑 파일 로드: {config.MAPPINGS_FILE_PATH}")
                 mappings_data = json.load(f)
                 # 매핑 정보를 단일 딕셔너리로 변환
                 flat_mappings = {}
@@ -82,7 +93,7 @@ def load_korean_mappings():
                 
                 return flat_mappings
         else:
-            print(f"[Warning] 매핑 파일을 찾을 수 없음: {mappings_file}")
+            print(f"[Warning] 매핑 파일을 찾을 수 없음: {config.MAPPINGS_FILE_PATH}")
             # 기본 매핑 정보를 파일로 저장
             save_korean_mappings(DEFAULT_MAPPINGS)
             # 단일 딕셔너리로 변환하여 반환
@@ -106,11 +117,12 @@ def load_korean_mappings():
 def save_korean_mappings(mappings_data):
     """한글 국명-학명 매핑 정보를 JSON 파일로 저장합니다."""
     try:
-        # 디렉토리가 없으면 생성
-        os.makedirs(os.path.dirname(mappings_file), exist_ok=True)
-        with open(mappings_file, 'w', encoding='utf-8') as f:
+        # config에서 파일 경로 사용
+        # 디렉토리가 없으면 생성 (config.DATA_DIR 사용)
+        os.makedirs(config.DATA_DIR, exist_ok=True)
+        with open(config.MAPPINGS_FILE_PATH, 'w', encoding='utf-8') as f:
             json.dump(mappings_data, f, ensure_ascii=False, indent=2)
-            print(f"[Info] 매핑 파일 저장 완료: {mappings_file}")
+            print(f"[Info] 매핑 파일 저장 완료: {config.MAPPINGS_FILE_PATH}")
     except Exception as e:
         print(f"[Error] 매핑 파일 저장 오류: {e}")
 
@@ -212,9 +224,10 @@ class SpeciesVerifierApp(ctk.CTk):
         self.active_tab = "해양생물" # 기본 활성 탭
         # --- 수정 끝 ---
 
-        self.MAX_RESULTS_DISPLAY = 500 # Treeview 결과 표시 최대 개수 (기존 100 -> 500)
-        self.MAX_FILE_PROCESSING_LIMIT = 2000 # 파일 처리 최대 학명 수 (500 -> 2000)
-        self.DIRECT_EXPORT_THRESHOLD = 500 # Treeview 대신 바로 파일로 저장할 임계값
+        # --- 설정 값 사용 (config 모듈 참조) ---
+        self.MAX_RESULTS_DISPLAY = config.MAX_RESULTS_DISPLAY # Treeview 결과 표시 최대 개수
+        self.MAX_FILE_PROCESSING_LIMIT = config.MAX_FILE_PROCESSING_LIMIT # 파일 처리 최대 학명 수
+        self.DIRECT_EXPORT_THRESHOLD = config.DIRECT_EXPORT_THRESHOLD # Treeview 대신 바로 파일로 저장할 임계값
 
         # --- 프레임 설정 --- (Title 프레임 제거, 푸터는 유지)
         self.grid_columnconfigure(0, weight=1)
@@ -313,6 +326,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.selected_file_path = None
 
         self.file_limit_label = ctk.CTkLabel(self.input_frame, 
+                                             # config 값 사용
                                              text=f"*파일 처리 시 최대 {self.MAX_FILE_PROCESSING_LIMIT}개 학명까지 가능합니다 (처리량이 {self.DIRECT_EXPORT_THRESHOLD}개 초과 시 Excel로 자동 저장).", 
                                              font=CTkFont(family="Malgun Gothic", size=10), 
                                              text_color=("gray40", "gray70"))
@@ -2440,6 +2454,15 @@ class SpeciesVerifierApp(ctk.CTk):
         sys.exit(1) # Exit if core components are missing
 
 if __name__ == "__main__":
+    # --- 설정 파일 존재 여부 확인 (추가) ---
+    if not os.path.exists("config.py"):
+        root = tk.Tk()
+        root.withdraw()
+        tk.messagebox.showerror("Initialization Error",
+                               "Configuration file (config.py) not found.\nApplication will now exit.")
+        root.destroy()
+        sys.exit(1)
+        
     app = SpeciesVerifierApp()
     # 앱 시작 시 학명 입력창에 포커스 설정 (약간의 지연 시간을 두어 GUI가 완전히 로드된 후에 실행)
     app.after(100, app.focus_entry)
