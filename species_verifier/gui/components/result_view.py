@@ -21,7 +21,7 @@ class ResultTreeview(BaseResultView):
         
         Args:
             parent: 부모 위젯
-            tab_type: 탭 유형 ("marine" 또는 "microbe")
+            tab_type: 탭 유형 ("marine", "microbe", 또는 "col")
             **kwargs: 추가 인자
         """
         self.tab_type = tab_type
@@ -54,6 +54,8 @@ class ResultTreeview(BaseResultView):
             columns = ("mapped_name", "verified", "worms_status", "worms_id", "worms_url", "summary")
         elif self.tab_type == "microbe":
             columns = ("valid_name", "verified", "status", "taxonomy", "link", "summary")
+        elif self.tab_type == "col":
+            columns = ("valid_name", "verified", "col_status", "col_id", "col_url", "summary")
             
         self.tree = ttk.Treeview(self.widget, columns=columns, show="headings", 
                                  yscrollcommand=self.scrollbar_y.set, 
@@ -101,6 +103,23 @@ class ResultTreeview(BaseResultView):
             self.tree.column("status", width=120, minwidth=80, anchor='center')
             self.tree.column("taxonomy", width=250, minwidth=150)
             self.tree.column("link", width=120, minwidth=80)
+            self.tree.column("summary", width=300, minwidth=150)
+        
+        elif self.tab_type == "col":
+            # 열 헤더 설정
+            self.tree.heading("valid_name", text="학명")
+            self.tree.heading("verified", text="검증")
+            self.tree.heading("col_status", text="COL 상태")
+            self.tree.heading("col_id", text="COL ID")
+            self.tree.heading("col_url", text="COL URL")
+            self.tree.heading("summary", text="위키백과 요약")
+            
+            # 열 너비 설정
+            self.tree.column("valid_name", width=150, minwidth=100)
+            self.tree.column("verified", width=60, minwidth=50, anchor='center')
+            self.tree.column("col_status", width=120, minwidth=80, anchor='center')
+            self.tree.column("col_id", width=100, minwidth=50, anchor='center')
+            self.tree.column("col_url", width=120, minwidth=80)
             self.tree.column("summary", width=300, minwidth=150)
         
         # 태그 설정
@@ -162,6 +181,8 @@ class ResultTreeview(BaseResultView):
             self._display_marine_result(result, insert_at_index)
         elif self.tab_type == "microbe":
             self._display_microbe_result(result, insert_at_index)
+        elif self.tab_type == "col":
+            self._display_col_result(result, insert_at_index)
     
     def _display_marine_result(self, result: Any, insert_at_index=tk.END):
         """
@@ -269,6 +290,45 @@ class ResultTreeview(BaseResultView):
             status,
             taxonomy,
             lpsn_link,
+            display_summary
+        ), tags=(tag,))
+    
+    def _display_col_result(self, result: Any, insert_at_index=tk.END):
+        """
+        COL(통합생물) 결과 표시
+        
+        Args:
+            result: 표시할 결과 (딕셔너리 형태)
+            insert_at_index: 삽입 위치 (기본값: 맨 끝)
+        """
+        input_name = result.get('input_name', '-') # COL API는 입력명을 반환하지 않으므로, 필요시 외부에서 추가 필요
+        valid_name = result.get('학명', '-') # COL 결과 키에 맞게 수정
+        is_verified = result.get('검증', 'Unknown') != 'Unknown' # 검증 결과가 있는지 여부
+        col_status = result.get('COL 상태', '-')
+        col_id = result.get('COL ID', '-')
+        col_url = result.get('COL URL', '-')
+        wiki_summary = result.get('위키백과 요약', '-')
+        
+        # 요약이 너무 길면 자르기
+        if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
+            display_summary = wiki_summary[:57] + '...'\
+        
+        # 태그 결정 (COL 상태에 따라)
+        tag = 'verified' # 기본값
+        if col_status.lower() == 'accepted':
+            tag = 'verified'
+        elif 'synonym' in col_status.lower() or 'ambiguous' in col_status.lower():
+            tag = 'caution'
+        elif not is_verified or col_status == '-': # 검증 안됐거나 정보 없을 때
+            tag = 'unverified'
+        
+        # 아이템 추가
+        self.tree.insert("", insert_at_index, text=input_name, values=(
+            valid_name,
+            "✓" if is_verified else "✗",
+            col_status,
+            col_id,
+            col_url,
             display_summary
         ), tags=(tag,))
     

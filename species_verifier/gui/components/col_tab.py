@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import Optional, Callable, Dict, Any, List
 import customtkinter as ctk
+import pandas as pd
 
 from species_verifier.gui.components.base import BaseTabFrame
 
@@ -38,6 +39,9 @@ class ColTabFrame(BaseTabFrame):
         self.file_clear_button = None
         self.initial_text = placeholder_text
         self._callbacks = {}
+        self.text_entry_count = 0
+        self.file_entry_count = 0
+        self.count_label = None
         super().__init__(parent, **kwargs)
         self.tab_name = "통합생물(COL)"
         self._create_widgets()
@@ -62,7 +66,6 @@ class ColTabFrame(BaseTabFrame):
         self.grid_rowconfigure(2, weight=0)
         self.grid_rowconfigure(3, weight=0)
         self.grid_rowconfigure(4, weight=0)
-        self.grid_rowconfigure(5, weight=1)
 
         # 1. 직접 입력 레이블
         ctk.CTkLabel(
@@ -82,7 +85,7 @@ class ColTabFrame(BaseTabFrame):
         self.entry.configure(text_color="gray")
         self.entry.bind("<FocusIn>", self._on_entry_focus_in)
         self.entry.bind("<FocusOut>", self._on_entry_focus_out)
-        self.entry.bind("<KeyRelease>", self._update_verify_button_state)
+        self.entry.bind("<KeyRelease>", self._update_input_count)
 
         # 3. 파일 입력 레이블
         ctk.CTkLabel(
@@ -101,65 +104,101 @@ class ColTabFrame(BaseTabFrame):
         self.file_browse_button.grid(row=0, column=1, padx=(0, 0))
         self.file_clear_button = ctk.CTkButton(file_frame, text="지우기", font=self.font, width=60, command=self._on_file_clear_click)
         self.file_clear_button.grid(row=0, column=2, padx=(2, 0))
-        self.file_path_var.trace_add("write", self._update_verify_button_state)
+        self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 5. 검증 버튼
+        # 5. 개수 표시 레이블
+        self.count_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=ctk.CTkFont(family="Malgun Gothic", size=10),
+            anchor="e"
+        )
+        self.count_label.grid(row=4, column=0, sticky="e", padx=10, pady=(5, 5))
+
+        # 6. 검증 버튼
         self.verify_button = ctk.CTkButton(
             self,
             text="검증",
             font=self.bold_font,
-            command=self._on_verify_click,
+            command=self._trigger_verify_callback,
             state="disabled"
         )
-        self.verify_button.grid(row=4, column=0, pady=(5, 5))
-        self._update_verify_button_state()
+        self.verify_button.grid(row=5, column=0, pady=(5, 10))
+        self._update_input_count()
 
-        # 6. 결과 테이블(트리뷰)
-        import tkinter.ttk as ttk
-        self.result_tree = ttk.Treeview(self, columns=("학명", "검증", "COL 상태", "COL ID", "COL URL", "위키백과 요약"), show="headings")
-        for col in ("학명", "검증", "COL 상태", "COL ID", "COL URL", "위키백과 요약"):
-            self.result_tree.heading(col, text=col)
-            self.result_tree.column(col, width=100, anchor="center")
-        self.result_tree.grid(row=5, column=0, sticky="nsew", padx=10, pady=5)
-        self.grid_rowconfigure(5, weight=1)
-
-        # 7. 상태바 (진행상황/메시지 등)
-        self.status_label = ctk.CTkLabel(self, text="입력 대기 중", font=self.font, anchor="w")
-        self.status_label.grid(row=6, column=0, sticky="ew", padx=10, pady=(0, 5))
-        self.grid_rowconfigure(6, weight=0)
-        self.grid_columnconfigure(0, weight=1)
-
-    def _on_verify_click(self):
-        # 입력값에서 학명 리스트 추출
-        input_text = self.entry.get("0.0", "end").strip()
-        if not input_text or input_text == self.initial_text:
-            return
-        names = [n.strip() for n in input_text.replace("\n", ",").split(",") if n.strip()]
-        if not names:
-            return
-        try:
-            from species_verifier.core.verifier import verify_col_species
-            results = verify_col_species(names)
-        except Exception as e:
-            results = [{"학명": "오류", "검증": str(e), "COL 상태": "-", "COL ID": "-", "COL URL": "-", "위키백과 요약": "-"}]
-        # 결과 테이블 초기화
-        for i in self.result_tree.get_children():
-            self.result_tree.delete(i)
-        # 결과 표시
-        for row in results:
-            self.result_tree.insert("", "end", values=(row.get("학명", "-"), row.get("검증", "-"), row.get("COL 상태", "-"), row.get("COL ID", "-"), row.get("COL URL", "-"), row.get("위키백과 요약", "-")))
-        # 상태바 업데이트
-        if results:
-            self.status_label.configure(text=f"{len(results)}건 결과 표시")
+    def _update_input_count(self, *args):
+        """입력된 텍스트 및 파일의 항목 개수를 계산하고 UI를 업데이트합니다."""
+        # 1. 텍스트 입력 개수 계산
+        current_text = self.entry.get("0.0", "end-1c")
+        if current_text and current_text != self.initial_text:
+            # 쉼표 또는 줄바꿈으로 분리하고 빈 항목 제거 후 개수 세기
+            entries = [entry.strip() for entry in current_text.replace("\n", ",").split(",") if entry.strip()]
+            self.text_entry_count = len(entries)
         else:
-            self.status_label.configure(text="결과 없음")
+            self.text_entry_count = 0
+            
+        # 2. 파일 입력 개수는 self.file_entry_count 사용 (파일 선택/지우기 시 업데이트됨)
+        file_count = self.file_entry_count
+        
+        # 3. 레이블 텍스트 생성
+        label_parts = []
+        if self.text_entry_count > 0:
+            label_parts.append(f"직접 입력: {self.text_entry_count}개")
+        if file_count > 0:
+            label_parts.append(f"파일: {file_count}개")
+            
+        count_text = " / ".join(label_parts)
+        
+        # 4. 레이블 업데이트
+        if self.count_label:
+            self.count_label.configure(text=count_text)
+             
+        # 5. 검증 버튼 상태 업데이트
+        is_text_valid = self.text_entry_count > 0
+        is_file_valid = file_count > 0
+        if is_text_valid or is_file_valid:
+            self.verify_button.configure(state="normal")
+        else:
+            self.verify_button.configure(state="disabled")
 
+    def _calculate_file_entries(self, file_path: str) -> int:
+        """주어진 파일 경로에서 항목 개수를 추정합니다. (첫 번째 열 기준)"""
+        if not file_path or not os.path.exists(file_path):
+            return 0
+            
+        count = 0
+        try:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.csv':
+                df = pd.read_csv(file_path, header=None, usecols=[0], skipinitialspace=True)
+                count = df[0].notna().sum()
+            elif ext == '.xlsx':
+                df = pd.read_excel(file_path, header=None, usecols=[0])
+                count = df[0].notna().sum()
+            elif ext == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = [line.strip() for line in f if line.strip()] # 비어있지 않은 줄만 계산
+                    count = len(lines)
+            else:
+                print(f"[Warning Col] Unsupported file type for count estimation: {ext}")
+                # 지원하지 않는 형식은 0 반환 또는 다른 방식 고려
+                
+        except pd.errors.EmptyDataError:
+            print(f"[Info Col] File is empty: {file_path}")
+            count = 0 # 빈 파일
+        except Exception as e:
+            print(f"[Error Col] Failed to estimate entries in file {file_path}: {e}")
+            # 오류 발생 시 0 반환 (또는 사용자에게 알림)
+            count = 0 
+            
+        print(f"[Debug Col] Estimated entries in file {os.path.basename(file_path)}: {count}")
+        return count
 
     def _on_entry_focus_in(self, event=None):
         if self.entry.get("0.0", "end-1c") == self.initial_text:
             self.entry.delete("0.0", tk.END)
             self.entry.configure(text_color=("black", "white"))
-        self._update_verify_button_state()
+        self._update_input_count()
 
     def _on_entry_focus_out(self, event=None):
         current_text = self.entry.get("0.0", "end-1c")
@@ -167,7 +206,7 @@ class ColTabFrame(BaseTabFrame):
             self.entry.delete("0.0", tk.END)
             self.entry.insert("0.0", self.initial_text)
             self.entry.configure(text_color="gray")
-        self._update_verify_button_state()
+        self._update_input_count()
 
     def _on_file_browse_click(self):
         file_path = filedialog.askopenfilename(
@@ -180,17 +219,24 @@ class ColTabFrame(BaseTabFrame):
             ]
         )
         if file_path:
+            # 파일 선택 시 개수 계산 및 저장
+            self.file_entry_count = self._calculate_file_entries(file_path)
             self.file_path_var.set(file_path)
             self._trigger_callback("on_file_browse", file_path)
         else:
+            # 파일 선택 취소 시
+            self.file_entry_count = 0
             self.file_path_var.set("")
-        self._update_verify_button_state()
+            
+        # 공통 업데이트 함수 호출
+        self._update_input_count()
 
     def _on_file_clear_click(self):
+        self.file_entry_count = 0 # 파일 개수 리셋
         self.file_path_var.set("")
-        self._update_verify_button_state()
+        self._update_input_count()
 
-    def _on_verify_click(self):
+    def _trigger_verify_callback(self):
         text = self.entry.get("0.0", "end-1c").strip()
         file_path = self.file_path_var.get()
         if text and text != self.initial_text:
@@ -200,37 +246,11 @@ class ColTabFrame(BaseTabFrame):
         else:
             print("[Warning COL] Verify button clicked but no valid input found.")
 
-    def _update_verify_button_state(self, *args):
-        text_input = self.entry.get("0.0", "end-1c").strip()
-        file_input = self.file_path_var.get()
-        is_text_valid = text_input and text_input != self.initial_text
-        is_file_valid = file_input and os.path.exists(file_input)
-        if is_text_valid or is_file_valid:
-            self.verify_button.configure(state="normal")
-        else:
-            self.verify_button.configure(state="disabled")
-
-
-    def _create_widgets(self, **kwargs):
-        # ... 기존 위젯 생성 코드 ...
-        # 파일 입력 프레임 예시
-        file_frame = ctk.CTkFrame(self)
-        file_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=2)
-        file_frame.grid_columnconfigure(0, weight=1)
-        # 파일 경로 Entry
-        self.file_path_entry = ctk.CTkEntry(file_frame, textvariable=self.file_path_var, font=self.font, width=260, state="readonly")
-        self.file_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        # 찾기 버튼
-        self.file_browse_button = ctk.CTkButton(file_frame, text="찾기", font=self.font, width=60, command=self._on_file_browse_click)
-        self.file_browse_button.grid(row=0, column=1, padx=(0, 0))
-        # 지우기 버튼
-        self.file_clear_button = ctk.CTkButton(file_frame, text="지우기", font=self.font, width=60, command=self._on_file_clear_click)
-        self.file_clear_button.grid(row=0, column=2, padx=(2, 0))
-        # 나머지 위젯들(입력, 검증 버튼 등)은 기존대로 배치
-
-
     def set_selected_file(self, file_path: Optional[str]):
         self.file_path_var.set(file_path or "")
-
-    def _on_file_clear_click(self):
-        self.file_path_var.set("")
+        # 파일 경로가 외부에서 설정될 때도 개수 업데이트
+        if file_path and os.path.exists(file_path):
+            self.file_entry_count = self._calculate_file_entries(file_path)
+        else:
+            self.file_entry_count = 0
+        self._update_input_count()
