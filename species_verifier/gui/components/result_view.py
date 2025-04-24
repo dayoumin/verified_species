@@ -311,7 +311,9 @@ class ResultTreeview(BaseResultView):
         
         # 요약이 너무 길면 자르기
         if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
-            display_summary = wiki_summary[:57] + '...'\
+            display_summary = wiki_summary[:57] + '...'
+        else:
+            display_summary = wiki_summary or '-'
         
         # 태그 결정 (COL 상태에 따라)
         tag = 'verified' # 기본값

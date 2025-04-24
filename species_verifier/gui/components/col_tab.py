@@ -41,7 +41,8 @@ class ColTabFrame(BaseTabFrame):
         self._callbacks = {}
         self.text_entry_count = 0
         self.file_entry_count = 0
-        self.count_label = None
+        self.text_count_label = None
+        self.file_count_label = None
         super().__init__(parent, **kwargs)
         self.tab_name = "통합생물(COL)"
         self._create_widgets()
@@ -67,14 +68,28 @@ class ColTabFrame(BaseTabFrame):
         self.grid_rowconfigure(3, weight=0)
         self.grid_rowconfigure(4, weight=0)
 
-        # 1. 직접 입력 레이블
-        ctk.CTkLabel(
-            self,
-            text="직접 입력:",
-            font=self.bold_font
-        ).grid(row=0, column=0, sticky=tk.W, padx=10, pady=(5, 2))
+        # 1. 직접 입력 레이블 + 개수 프레임
+        text_label_frame = ctk.CTkFrame(self, fg_color="transparent")
+        text_label_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 2))
+        text_label_frame.grid_columnconfigure(0, weight=0)
+        text_label_frame.grid_columnconfigure(1, weight=0)
+        text_label_frame.grid_columnconfigure(2, weight=1)
 
-        # 2. 텍스트 입력 필드
+        ctk.CTkLabel(
+            text_label_frame,
+            text="직접 입력",
+            font=self.bold_font
+        ).grid(row=0, column=0, sticky="w")
+
+        self.text_count_label = ctk.CTkLabel(
+             text_label_frame,
+             text="",
+             font=ctk.CTkFont(family="Malgun Gothic", size=10),
+             anchor="w"
+        )
+        self.text_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+
+        # 2. 텍스트 입력 필드 (Restore columnspan)
         self.entry = ctk.CTkTextbox(
             self,
             height=60,
@@ -87,35 +102,46 @@ class ColTabFrame(BaseTabFrame):
         self.entry.bind("<FocusOut>", self._on_entry_focus_out)
         self.entry.bind("<KeyRelease>", self._update_input_count)
 
-        # 3. 파일 입력 레이블
+        # 3. 파일 입력 레이블 + 개수 프레임
+        file_label_frame = ctk.CTkFrame(self, fg_color="transparent")
+        file_label_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(5, 2))
+        file_label_frame.grid_columnconfigure(0, weight=0)
+        file_label_frame.grid_columnconfigure(1, weight=0)
+        file_label_frame.grid_columnconfigure(2, weight=1)
+
         ctk.CTkLabel(
-            self,
+            file_label_frame,
             text="파일 입력",
             font=self.bold_font
-        ).grid(row=2, column=0, sticky=tk.W, padx=10, pady=(5, 2))
+        ).grid(row=0, column=0, sticky="w")
 
-        # 4. 파일 입력 프레임
+        self.file_count_label = ctk.CTkLabel(
+             file_label_frame,
+             text="",
+             font=ctk.CTkFont(family="Malgun Gothic", size=10),
+             anchor="w"
+        )
+        self.file_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+
+        # 4. 파일 입력 프레임 (Restore columnspan and internal layout)
         file_frame = ctk.CTkFrame(self)
         file_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=2)
         file_frame.grid_columnconfigure(0, weight=1)
-        self.file_path_entry = ctk.CTkEntry(file_frame, textvariable=self.file_path_var, font=self.font, width=260, state="readonly")
+        file_frame.grid_columnconfigure(1, weight=0)
+        file_frame.grid_columnconfigure(2, weight=0)
+
+        self.file_path_entry = ctk.CTkEntry(file_frame, textvariable=self.file_path_var, font=self.font, state="readonly")
         self.file_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+
         self.file_browse_button = ctk.CTkButton(file_frame, text="찾기", font=self.font, width=60, command=self._on_file_browse_click)
-        self.file_browse_button.grid(row=0, column=1, padx=(0, 0))
+        self.file_browse_button.grid(row=0, column=1, padx=(0, 5))
+
         self.file_clear_button = ctk.CTkButton(file_frame, text="지우기", font=self.font, width=60, command=self._on_file_clear_click)
-        self.file_clear_button.grid(row=0, column=2, padx=(2, 0))
+        self.file_clear_button.grid(row=0, column=2, padx=(0, 0))
+
         self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 5. 개수 표시 레이블
-        self.count_label = ctk.CTkLabel(
-            self,
-            text="",
-            font=ctk.CTkFont(family="Malgun Gothic", size=10),
-            anchor="e"
-        )
-        self.count_label.grid(row=4, column=0, sticky="e", padx=10, pady=(5, 5))
-
-        # 6. 검증 버튼
+        # 5. 검증 버튼 (Restore columnspan and adjust row)
         self.verify_button = ctk.CTkButton(
             self,
             text="검증",
@@ -123,7 +149,7 @@ class ColTabFrame(BaseTabFrame):
             command=self._trigger_verify_callback,
             state="disabled"
         )
-        self.verify_button.grid(row=5, column=0, pady=(5, 10))
+        self.verify_button.grid(row=4, column=0, pady=(5, 10))
         self._update_input_count()
 
     def _update_input_count(self, *args):
@@ -140,18 +166,14 @@ class ColTabFrame(BaseTabFrame):
         # 2. 파일 입력 개수는 self.file_entry_count 사용 (파일 선택/지우기 시 업데이트됨)
         file_count = self.file_entry_count
         
-        # 3. 레이블 텍스트 생성
-        label_parts = []
-        if self.text_entry_count > 0:
-            label_parts.append(f"직접 입력: {self.text_entry_count}개")
-        if file_count > 0:
-            label_parts.append(f"파일: {file_count}개")
-            
-        count_text = " / ".join(label_parts)
+        # 3. 레이블 텍스트 생성 및 업데이트 (개별적으로)
+        text_count_str = f"학명 개수 {self.text_entry_count}개" if self.text_entry_count > 0 else ""
+        file_count_str = f"학명 개수 {file_count}개" if file_count > 0 else ""
         
-        # 4. 레이블 업데이트
-        if self.count_label:
-            self.count_label.configure(text=count_text)
+        if self.text_count_label:
+            self.text_count_label.configure(text=text_count_str)
+        if self.file_count_label:
+            self.file_count_label.configure(text=file_count_str)
              
         # 5. 검증 버튼 상태 업데이트
         is_text_valid = self.text_entry_count > 0

@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import Optional, Callable, Dict, Any, List
 import customtkinter as ctk
+import pandas as pd
 
 from species_verifier.gui.components.base import BaseTabFrame
 
@@ -57,6 +58,12 @@ class MarineTabFrame(BaseTabFrame):
         # 초기값 설정
         self.initial_text = placeholder_text
         
+        # 학명 개수 표시를 위한 변수 추가
+        self.text_entry_count = 0
+        self.file_entry_count = 0
+        self.text_count_label = None
+        self.file_count_label = None
+        
         # BaseTabFrame 초기화 (parent 전달)
         super().__init__(parent, **kwargs) 
         self.tab_name = "해양생물(WoRMS)"
@@ -73,14 +80,28 @@ class MarineTabFrame(BaseTabFrame):
         self.grid_rowconfigure(3, weight=0) 
         self.grid_rowconfigure(4, weight=0) 
         
-        # 1. 직접 입력 레이블 (pady 수정)
-        ctk.CTkLabel(
-            self,
-            text="직접 입력:",
-            font=self.bold_font
-        ).grid(row=0, column=0, sticky=tk.W, padx=10, pady=(5, 2)) # pady 상단 줄임
+        # 1. 직접 입력 레이블 + 개수 프레임
+        text_label_frame = ctk.CTkFrame(self, fg_color="transparent")
+        text_label_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 2))
+        text_label_frame.grid_columnconfigure(0, weight=0)
+        text_label_frame.grid_columnconfigure(1, weight=0)
+        text_label_frame.grid_columnconfigure(2, weight=1)
 
-        # 2. 텍스트 입력 필드 (pady 수정)
+        ctk.CTkLabel(
+            text_label_frame,
+            text="직접 입력",
+            font=self.bold_font
+        ).grid(row=0, column=0, sticky="w")
+
+        self.text_count_label = ctk.CTkLabel(
+             text_label_frame,
+             text="",
+             font=ctk.CTkFont(family="Malgun Gothic", size=10),
+             anchor="w"
+        )
+        self.text_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+
+        # 2. 텍스트 입력 필드
         self.entry = ctk.CTkTextbox(
             self,
             height=60, 
@@ -92,16 +113,30 @@ class MarineTabFrame(BaseTabFrame):
         
         self.entry.bind("<FocusIn>", self._on_entry_focus_in)
         self.entry.bind("<FocusOut>", self._on_entry_focus_out)
-        self.entry.bind("<KeyRelease>", self._update_verify_button_state)
+        self.entry.bind("<KeyRelease>", self._update_input_count)
 
-        # 3. 파일 입력 레이블 (pady 수정)
+        # 3. 파일 입력 레이블 + 개수 프레임
+        file_label_frame = ctk.CTkFrame(self, fg_color="transparent")
+        file_label_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(5, 2))
+        file_label_frame.grid_columnconfigure(0, weight=0)
+        file_label_frame.grid_columnconfigure(1, weight=0)
+        file_label_frame.grid_columnconfigure(2, weight=1)
+
         ctk.CTkLabel(
-            self,
+            file_label_frame,
             text="파일 입력",
             font=self.bold_font
-        ).grid(row=2, column=0, sticky=tk.W, padx=10, pady=(5, 2)) # pady 상단 줄임
+        ).grid(row=0, column=0, sticky="w")
 
-        # 4. 파일 입력 프레임 (pady 수정)
+        self.file_count_label = ctk.CTkLabel(
+             file_label_frame,
+             text="",
+             font=ctk.CTkFont(family="Malgun Gothic", size=10),
+             anchor="w"
+        )
+        self.file_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+
+        # 4. 파일 입력 프레임
         file_input_frame = ctk.CTkFrame(self)
         file_input_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=2)
         file_input_frame.grid_columnconfigure(0, weight=1)
@@ -133,9 +168,9 @@ class MarineTabFrame(BaseTabFrame):
         )
         self.file_clear_button.grid(row=0, column=2, padx=(2, 0), pady=2)
         
-        self.file_path_var.trace_add("write", self._update_verify_button_state)
+        self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 5. 통합 검증 버튼 (pady 수정)
+        # 5. 통합 검증 버튼
         self.verify_button = ctk.CTkButton(
             self,
             text="검증",
@@ -143,16 +178,75 @@ class MarineTabFrame(BaseTabFrame):
             command=self._on_verify_click, 
             state="disabled"
         )
-        self.verify_button.grid(row=4, column=0, pady=(5, 5)) # pady 상하단 줄임
+        self.verify_button.grid(row=4, column=0, pady=(5, 5))
         
+        self._update_input_count()
+
+    def _update_input_count(self, *args):
+        """입력된 텍스트 및 파일의 항목 개수를 계산하고 UI를 업데이트합니다."""
+        # 1. 텍스트 입력 개수 계산
+        current_text = self.entry.get("0.0", "end-1c")
+        if current_text and current_text != self.initial_text:
+            # 쉼표 또는 줄바꿈으로 분리하고 빈 항목 제거 후 개수 세기
+            entries = [entry.strip() for entry in current_text.replace("\n", ",").split(",") if entry.strip()]
+            self.text_entry_count = len(entries)
+        else:
+            self.text_entry_count = 0
+            
+        # 2. 파일 입력 개수 사용
+        file_count = self.file_entry_count
+        
+        # 3. 레이블 텍스트 생성 및 업데이트
+        text_count_str = f"학명 개수 {self.text_entry_count}개" if self.text_entry_count > 0 else ""
+        file_count_str = f"학명 개수 {file_count}개" if file_count > 0 else ""
+        
+        if hasattr(self, 'text_count_label') and self.text_count_label:
+            self.text_count_label.configure(text=text_count_str)
+        if hasattr(self, 'file_count_label') and self.file_count_label:
+            self.file_count_label.configure(text=file_count_str)
+             
+        # 4. 검증 버튼 상태 업데이트
         self._update_verify_button_state()
+
+    def _calculate_file_entries(self, file_path: str) -> int:
+        """주어진 파일 경로에서 항목 개수를 추정합니다. (첫 번째 열 기준)"""
+        if not file_path or not os.path.exists(file_path):
+            return 0
+            
+        count = 0
+        try:
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext == '.csv':
+                df = pd.read_csv(file_path, header=None, usecols=[0], skipinitialspace=True)
+                count = df[0].notna().sum()
+            elif ext == '.xlsx':
+                df = pd.read_excel(file_path, header=None, usecols=[0])
+                count = df[0].notna().sum()
+            elif ext == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = [line.strip() for line in f if line.strip()] # 비어있지 않은 줄만 계산
+                    count = len(lines)
+            else:
+                print(f"[Warning Marine] Unsupported file type for count estimation: {ext}")
+                # 지원하지 않는 형식은 0 반환 또는 다른 방식 고려
+                
+        except pd.errors.EmptyDataError:
+            print(f"[Info Marine] File is empty: {file_path}")
+            count = 0 # 빈 파일
+        except Exception as e:
+            print(f"[Error Marine] Failed to estimate entries in file {file_path}: {e}")
+            # 오류 발생 시 0 반환 (또는 사용자에게 알림)
+            count = 0 
+            
+        print(f"[Debug Marine] Estimated entries in file {os.path.basename(file_path)}: {count}")
+        return count
 
     def _on_entry_focus_in(self, event=None):
         """입력 필드 포커스인 이벤트 처리"""
         if self.entry.get("0.0", "end-1c") == self.initial_text:
             self.entry.delete("0.0", tk.END)
             self.entry.configure(text_color=("black", "white"))
-        self._update_verify_button_state()
+        self._update_input_count()
 
     def _on_entry_focus_out(self, event=None):
         """입력 필드 포커스아웃 이벤트 처리"""
@@ -161,7 +255,7 @@ class MarineTabFrame(BaseTabFrame):
             self.entry.delete("0.0", tk.END)
             self.entry.insert("0.0", self.initial_text)
             self.entry.configure(text_color="gray")
-        self._update_verify_button_state()
+        self._update_input_count()
     
     def _on_file_browse_click(self):
         """파일 찾기 버튼 클릭 이벤트 처리"""
@@ -175,15 +269,20 @@ class MarineTabFrame(BaseTabFrame):
             ]
         )
         if file_path:
+            # 파일 선택 시 개수 계산 및 저장
+            self.file_entry_count = self._calculate_file_entries(file_path)
             self.file_path_var.set(file_path)
+            self._update_input_count()
         else:
             self.file_path_var.set("")
-            self._update_verify_button_state()
+            self.file_entry_count = 0
+            self._update_input_count()
 
     def _on_file_clear_click(self):
         """파일 지우기 버튼 클릭 이벤트 처리"""
         self.file_path_var.set("")
-        self._update_verify_button_state()
+        self.file_entry_count = 0
+        self._update_input_count()
 
     def _on_verify_click(self):
         """통합 검증 버튼 클릭 이벤트 처리"""
@@ -247,3 +346,13 @@ class MarineTabFrame(BaseTabFrame):
         """
         for event_name, callback in callbacks.items():
             self.register_callback(event_name, callback)
+            
+    def set_selected_file(self, file_path: Optional[str]):
+        """선택된 파일 설정"""
+        if file_path:
+            self.file_entry_count = self._calculate_file_entries(file_path)
+            self.file_path_var.set(file_path)
+        else:
+            self.file_entry_count = 0
+            self.file_path_var.set("")
+        self._update_input_count()

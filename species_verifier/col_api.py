@@ -5,28 +5,78 @@ def verify_col_species(scientific_name: str):
     COL 글로벌 API를 이용해 학명 검증 결과를 반환합니다.
     """
     url = "https://api.catalogueoflife.org/nameusage/search"
-    params = {"name": scientific_name}
+    params = {"q": scientific_name, "limit": 1}
     try:
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("result"):
             match = data["result"][0]
-            return {
+            
+            # usage -> name -> scientificName 경로 시도
+            usage = match.get("usage", {})
+            name_info = usage.get("name", {})
+            extracted_name = name_info.get("scientificName")
+            
+            # 추출 실패 시 최상위 scientificName 시도 (기존 방식)
+            if not extracted_name:
+                extracted_name = match.get("scientificName")
+
+            # 그래도 없으면 입력명 사용 또는 '-'
+            final_name = extracted_name if extracted_name else scientific_name 
+
+            # 기본 결과 생성 (참고용, 키 이름은 API 응답 기준)
+            original_result = {
                 "query": scientific_name,
                 "matched": True,
-                "acceptedName": match.get("scientificName"),
-                "rank": match.get("rank"),
-                "status": match.get("status"),
-                "kingdom": match.get("kingdom"),
-                "phylum": match.get("phylum"),
-                "class": match.get("class"),
-                "order": match.get("order"),
-                "family": match.get("family"),
-                "genus": match.get("genus"),
-                "col_id": match.get("id"),
+                "extracted_scientificName": final_name, # 추출된 이름 기록
+                "status": usage.get("status"), # usage에서 상태 가져오기
+                "rank": name_info.get("rank"), # name에서 rank 가져오기
+                "col_id": usage.get("id"), # usage에서 ID 가져오기
+                # 필요한 다른 정보들도 usage 또는 name_info 에서 가져올 수 있음
             }
+
+            # ResultTreeview 형식으로 변환
+            col_id = usage.get("id", "-") # ID를 여기서도 사용
+            col_url = f"https://www.catalogueoflife.org/data/taxon/{col_id}" if col_id != '-' else '-'
+            status = usage.get("status", "-") # 상태 사용
+
+            display_result = {
+                "학명": final_name, # 추출된 학명 사용
+                "검증": "Accepted" if status == "accepted" else status.capitalize() if isinstance(status, str) else "Unknown", # 상태에 기반한 검증
+                "COL 상태": status,
+                "COL ID": col_id,
+                "COL URL": col_url,
+                "위키백과 요약": "-",
+                "original_data": original_result # 수정된 원본 데이터
+            }
+            return display_result
         else:
-            return {"query": scientific_name, "matched": False}
+            # 매칭 결과가 없을 경우
+            return {
+                "query": scientific_name,
+                "matched": False,
+                "학명": scientific_name,
+                "검증": "Unknown",
+                "COL 상태": "-",
+                "COL ID": "-",
+                "COL URL": "-",
+                "위키백과 요약": "-"
+            }
+    except requests.exceptions.HTTPError as http_err:
+        # HTTP 에러 처리
+        error_message = f"{http_err.response.status_code} {http_err.response.reason}"
+        print(f"[Error COL API] HTTP error occurred: {error_message} for query: {scientific_name}")
+        return {
+            "query": scientific_name, "matched": False, "error": error_message,
+            "학명": scientific_name, "검증": "Error", "COL 상태": f"오류: {error_message}",
+            "COL ID": "-", "COL URL": "-", "위키백과 요약": "-"
+        }
     except Exception as e:
-        return {"query": scientific_name, "matched": False, "error": str(e)}
+        # 기타 에러 처리
+        print(f"[Error COL API] General error occurred: {e} for query: {scientific_name}")
+        return {
+            "query": scientific_name, "matched": False, "error": str(e),
+            "학명": scientific_name, "검증": "Error", "COL 상태": f"오류: {str(e)}",
+            "COL ID": "-", "COL URL": "-", "위키백과 요약": "-"
+        }

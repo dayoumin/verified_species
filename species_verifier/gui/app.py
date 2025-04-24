@@ -335,7 +335,10 @@ class SpeciesVerifierApp(ctk.CTk):
                 if scientific_name:
                     self._start_verification_thread([(input_text, scientific_name)])
                 else:
-                    self.show_centered_message("warning", "한글명 매핑 실패") 
+                    self.show_centered_message("warning", "한글명 매핑 실패", f"'{input_text}'에 대한 학명 매핑을 찾을 수 없습니다.")
+            else:
+                # 일반 학명(영문) 처리 - 이 부분이 누락되어 있었습니다
+                self._start_verification_thread([input_text])
 
     # --- COL(통합생물) 탭 콜백 함수 ---
     def _col_search(self, input_text: str, tab_name: str = "col"):
