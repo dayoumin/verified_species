@@ -224,6 +224,8 @@ class SpeciesVerifierApp(ctk.CTk):
         )
         self.status_bar.widget.grid(row=2, column=0, padx=10, pady=(5, 5), sticky="nsew")
         self.status_bar.set_cancel_command(self._cancel_operation) # 취소 명령 설정
+        # StatusBar 초기 상태 설정 (저장 버튼 숨김)
+        self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
         
         # --- 푸터 생성 (3행으로 이동) ---
         self.footer_frame = ctk.CTkFrame(self, height=20, corner_radius=0)
@@ -733,14 +735,25 @@ class SpeciesVerifierApp(ctk.CTk):
     def _check_results_exist(self) -> bool:
          """현재 활성 탭에 결과가 있는지 확인합니다."""
          if not hasattr(self, 'tab_view'): # tab_view 로드 전 호출 방지
+              print("[Debug Check Results] tab_view not found.")
               return False
          current_tab_name = self.tab_view.get()
+         print(f"[Debug Check Results] Checking results for tab: {current_tab_name}")
+
          if current_tab_name == "해양생물":
-             # 수정: current_results_marine 리스트 직접 확인
-             return hasattr(self, 'current_results_marine') and bool(self.current_results_marine)
+             results_list = self.current_results_marine if hasattr(self, 'current_results_marine') else None
+             list_exists = results_list is not None
+             list_not_empty = bool(results_list)
+             print(f"[Debug Check Results - Marine] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
+             return list_exists and list_not_empty
          elif current_tab_name == "미생물 (LPSN)":
-             # 수정: current_results_microbe 리스트 직접 확인
-             return hasattr(self, 'current_results_microbe') and bool(self.current_results_microbe)
+             results_list = self.current_results_microbe if hasattr(self, 'current_results_microbe') else None
+             list_exists = results_list is not None
+             list_not_empty = bool(results_list)
+             print(f"[Debug Check Results - Microbe] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
+             return list_exists and list_not_empty
+
+         print(f"[Debug Check Results] Unknown tab name: {current_tab_name}")
          return False
 
     def _process_result_queue(self):
