@@ -80,15 +80,15 @@ class ResultTreeview(BaseResultView):
             
             # 열 너비 설정
             self.tree.column("mapped_name", width=150, minwidth=100)
-            self.tree.column("verified", width=60, minwidth=50, anchor='center') # 중앙 정렬 추가
-            self.tree.column("worms_status", width=120, minwidth=80)
-            self.tree.column("worms_id", width=80, minwidth=50, anchor='center') # 중앙 정렬 추가
+            self.tree.column("verified", width=60, minwidth=50, anchor='center')
+            self.tree.column("worms_status", width=120, minwidth=80, anchor='center')
+            self.tree.column("worms_id", width=80, minwidth=50, anchor='center')
             self.tree.column("worms_url", width=120, minwidth=80)
             self.tree.column("summary", width=300, minwidth=150)
             
         elif self.tab_type == "microbe":
             # 열 헤더 설정
-            self.tree.heading("valid_name", text="유효 학명")
+            self.tree.heading("valid_name", text="학명")
             self.tree.heading("verified", text="검증")
             self.tree.heading("status", text="상태")
             self.tree.heading("taxonomy", text="분류")
@@ -97,8 +97,8 @@ class ResultTreeview(BaseResultView):
             
             # 열 너비 설정
             self.tree.column("valid_name", width=150, minwidth=100)
-            self.tree.column("verified", width=60, minwidth=50, anchor='center') # 중앙 정렬 추가
-            self.tree.column("status", width=120, minwidth=80)
+            self.tree.column("verified", width=60, minwidth=50, anchor='center')
+            self.tree.column("status", width=120, minwidth=80, anchor='center')
             self.tree.column("taxonomy", width=250, minwidth=150)
             self.tree.column("link", width=120, minwidth=80)
             self.tree.column("summary", width=300, minwidth=150)
@@ -244,35 +244,30 @@ class ResultTreeview(BaseResultView):
             wiki_summary = result.get('wiki_summary', '-')
             is_microbe = result.get('is_microbe', False)
         
+        # --- 수정: valid_name이 없을 경우 input_name 사용 ---
+        display_name = valid_name
+        if not display_name or display_name == '-':
+            display_name = input_name # 유효 학명이 없으면 입력 학명 표시
+
         # 요약이 너무 길면 자르기
         if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
             display_summary = wiki_summary[:57] + '...'
         else:
             display_summary = wiki_summary or '-'
         
-        # 분류학적 정보가 너무 길면 자르기
-        if isinstance(taxonomy, str) and len(taxonomy) > 80:
-            display_taxonomy = taxonomy[:77] + '...'
-        else:
-            display_taxonomy = taxonomy or '-'
-        
         # 태그 결정 (상태에 따라)
         tag = 'verified' if is_verified else 'unverified'
-        if is_microbe:
+        if 'correct' in str(status).lower():
             tag = 'verified'
-        elif not is_verified:
-            tag = 'unverified'
-        
-        # 상태가 synonym이면 주의 태그 적용
-        if 'synonym' in str(status).lower():
+        elif 'synonym' in str(status).lower():
             tag = 'caution'
             
-        # 아이템 추가
+        # 아이템 추가 (수정: display_name 사용)
         self.tree.insert("", insert_at_index, text=input_name, values=(
-            valid_name,
+            display_name, # valid_name 대신 display_name 사용
             "✓" if is_verified else "✗",
             status,
-            display_taxonomy,
+            taxonomy,
             lpsn_link,
             display_summary
         ), tags=(tag,))

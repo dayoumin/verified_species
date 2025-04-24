@@ -8,7 +8,7 @@ import os
 import pyworms # WoRMS 검증을 위해 필요
 from bs4 import BeautifulSoup # LPSN 스크래핑에 필요
 import traceback
-from typing import Dict, Any
+from typing import Dict, Any, List, Callable
 
 # 설정 및 다른 모듈 임포트
 try:
@@ -294,89 +294,256 @@ def verify_marine_species(verification_list_input):
 # --- 미생물 검증 로직 (LPSN 스크래핑 기반) ---
 
 def verify_single_microbe_lpsn(microbe_name):
-    """단일 미생물 학명을 LPSN에서 검증 (기존 로직 유지 또는 개선)
+    """단일 미생물 학명을 LPSN에서 검증 (개선: 딕셔너리 직접 반환)
        - Placeholder for the actual LPSN scraping and verification logic.
        - Returns a dictionary with verification results for a single name.
     """
     print(f"[Info LPSN Core] LPSN 검증 시작: '{microbe_name}'")
     cleaned_name = clean_scientific_name(microbe_name)
-    if not cleaned_name or cleaned_name == '-':
-        print(f"[Warning LPSN Core] Invalid input after cleaning: '{microbe_name}'")
-        return create_basic_microbe_result(microbe_name, status='입력 오류')
-
-    # --- 실제 LPSN 스크래핑 로직 시작 ---
-    # (기존 스크래핑 로직이 이 안에 구현되어 있다고 가정)
-    # 예시: 검색 URL 생성, 요청, 파싱, 정보 추출
+    
+    # --- search_url 정의는 유지 (Fallback용) ---
     search_url = f"https://lpsn.dsmz.de/search?query={cleaned_name.replace(' ', '+')}"
-    print(f"[Info LPSN Core] 검색 URL: {search_url}")
-    time.sleep(0.5) # Rate limiting
+    print(f"[Info LPSN Core] 검색 URL (Fallback용): {search_url}")
+    
+    # --- 수정: 상세 URL 직접 생성 시도 ---
+    direct_detail_url = f"https://lpsn.dsmz.de/species/{cleaned_name.lower().replace(' ', '-')}"
+    print(f"[Info LPSN Core] 예상 상세 URL 시도: {direct_detail_url}")
 
-    # 임시 결과 (실제로는 스크래핑 결과 사용)
-    # 이 부분은 실제 스크래핑 결과에 따라 달라져야 함
-    lpsn_data = {
-        'valid_name': '-', # 스크래핑으로 찾은 유효 이름
-        'status': '상세 정보 링크 없음', # 스크래핑 결과 상태
-        'taxonomy': get_default_taxonomy(cleaned_name), # 기본 분류 또는 스크래핑 결과
-        'lpsn_link': '-' # 스크래핑으로 찾은 링크
-    }
-    print(f"[Warning LPSN Core] '{cleaned_name}' 검색 결과는 있으나, 상세 링크 못찾음") # 예시 로그
+    # --- 함수 전체를 try-except로 감싸기 시작 (기존 유지) ---
+    try: 
+        # 기본 결과 딕셔너리 구조 정의
+        base_result = {
+            'input_name': microbe_name,
+            'scientific_name': cleaned_name if cleaned_name else microbe_name,
+            'is_verified': False,
+            'valid_name': '-',
+            'status': '시작 전',
+            'taxonomy': '-',
+            'lpsn_link': direct_detail_url, # 기본 링크를 예상 상세 URL로 설정
+            'wiki_summary': '-',
+            'korean_name': '-',
+            'is_microbe': True
+        }
 
-    # --- 스크래핑 로직 끝 ---
+        if not cleaned_name or cleaned_name == '-':
+            print(f"[Warning LPSN Core] Invalid input after cleaning: '{microbe_name}'")
+            base_result['status'] = '입력 오류'
+            return base_result
 
-    # 위키백과 요약 검색
-    print(f"[Info LPSN Core] '{cleaned_name}' 위키백과 요약 검색 시도 (미생물)")
-    wiki_summary = get_wiki_summary(lpsn_data.get('valid_name', cleaned_name))
+        # === 실제 스크래핑 로직 시작 (수정됨) ===
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        detail_soup = None
+        species_detail_url = direct_detail_url # 우선 예상 URL 사용
+        
+        # 1. 예상 상세 URL로 직접 접속 시도
+        try:
+            print(f"[Info LPSN Core] 직접 상세 URL 요청: {direct_detail_url}")
+            time.sleep(0.3)
+            response = requests.get(direct_detail_url, headers=headers, timeout=10)
+            response.raise_for_status() # 200 외 상태코드면 예외 발생
+            detail_soup = BeautifulSoup(response.text, 'html.parser')
+            print("[Info LPSN Core] 직접 상세 URL 접속 성공")
+            # 성공 시 species_detail_url은 이미 direct_detail_url로 설정됨
 
-    final_result = create_basic_microbe_result(
-        input_name=microbe_name, # 원본 입력 이름
-        valid_name=lpsn_data.get('valid_name', '-'),
-        status=lpsn_data.get('status', '정보 없음'),
-        taxonomy=lpsn_data.get('taxonomy', '정보 없음'),
-        lpsn_link=lpsn_data.get('lpsn_link', '-'),
-        wiki_summary=wiki_summary if wiki_summary else '정보 없음'
-    )
-    print(f"[Info LPSN Core] LPSN 검증 완료: '{microbe_name}' -> Status: {final_result['status']}")
-    return final_result
+        except requests.exceptions.RequestException as direct_err:
+            print(f"[Warning LPSN Core] 직접 상세 URL 접속 실패 ({direct_err}). Fallback 검색 시도...")
+            # 2. Fallback: 검색 URL로 접속하여 링크 찾기
+            try:
+                print(f"[Info LPSN Core] Fallback 검색 URL 요청: {search_url}")
+                time.sleep(0.3)
+                response = requests.get(search_url, headers=headers, timeout=10)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # 검색 결과 페이지에서 링크 찾기 (이전 로직 활용)
+                species_link_tag = None
+                search_results_div = soup.find('div', id='search-page') # 검색 결과 페이지의 특정 div 찾기 (예시)
+                if search_results_div: 
+                     # 예시: 검색 결과 요약 페이지의 species (1) 링크 찾기
+                     # 실제 구조에 맞게 수정 필요!
+                     species_heading = search_results_div.find('b', string=lambda text: text and 'species (' in text.lower())
+                     if species_heading:
+                          link = species_heading.find_next('a', href=lambda href: href and '/species/' in href)
+                          if link and cleaned_name.lower() in link.get_text(strip=True).lower():
+                               species_link_tag = link
+                               print(f"[Info LPSN Core] Fallback 검색 결과에서 상세 링크 찾음: {species_link_tag['href']}")
 
-# --- 기존 verify_microbe_species 함수 수정 ---
-# 이 함수가 microbe_verifier.py 에서 호출됨
-def verify_microbe_species(microbe_names_list):
+                if species_link_tag:
+                    # 상세 페이지 다시 요청
+                    species_detail_url = f"https://lpsn.dsmz.de{species_link_tag['href']}"
+                    print(f"[Info LPSN Core] Fallback 상세 페이지 요청: {species_detail_url}")
+                    time.sleep(0.3)
+                    detail_response = requests.get(species_detail_url, headers=headers, timeout=10)
+                    detail_response.raise_for_status()
+                    detail_soup = BeautifulSoup(detail_response.text, 'html.parser')
+                    print("[Info LPSN Core] Fallback 상세 페이지 접속 성공")
+                else:
+                    print("[Warning LPSN Core] Fallback 검색 결과에서도 상세 링크 못찾음.")
+                    base_result['status'] = '링크 못찾음' # 최종 상태 업데이트
+                    species_detail_url = search_url # 링크 못찾았으니 검색 URL 유지
+            
+            except requests.exceptions.RequestException as fallback_err:
+                 print(f"[Error LPSN Core] Fallback 검색/상세 요청 오류: {fallback_err}")
+                 base_result['status'] = 'Fallback 오류'
+                 species_detail_url = search_url
+        
+        # 3. 확보된 detail_soup에서 상태 추출 (detail_soup이 None이 아닐 경우)
+        if detail_soup:
+            taxonomic_status = '상태 조회 실패' 
+            try:
+                p_tag = detail_soup.select_one('#detail-page > p:has(> b:contains("Taxonomic status:"))')
+                if p_tag:
+                    p_text = p_tag.get_text(strip=True)
+                    if "Taxonomic status:" in p_text:
+                        taxonomic_status = p_text.replace("Taxonomic status:", "").strip()
+                        print(f"[Info LPSN Core] 추출된 상태 (CSS Selector): {taxonomic_status}")
+                    else:
+                        print(f"[Warning LPSN Core] <p> 태그에서 'Taxonomic status:' 텍스트를 찾지 못함")
+                else:
+                    print(f"[Warning LPSN Core] 상태 정보를 포함한 <p> 태그를 찾지 못함 (CSS Selector)")
+                    status_tag = detail_soup.find('b', string=lambda text: text and 'Taxonomic status:' in text)
+                    if status_tag:
+                        status_text_node = status_tag.find_next_sibling(string=True)
+                        if status_text_node:
+                            taxonomic_status = status_text_node.strip()
+                            print(f"[Info LPSN Core] 추출된 상태 (Fallback): {taxonomic_status}")
+                        else:
+                            print(f"[Warning LPSN Core] 상태 텍스트 노드를 찾지 못함 (Fallback)")
+                            taxonomic_status = '상태 텍스트 못찾음'
+                    else:
+                         print(f"[Warning LPSN Core] 상태 태그(<p>, <b>)를 찾지 못함.")
+                         taxonomic_status = '상태 태그 못찾음'
+
+            except Exception as sel_err:
+                 print(f"[Error LPSN Core] 상태 추출 중 오류: {sel_err}")
+                 taxonomic_status = '상태 추출 오류'
+            
+            base_result['status'] = taxonomic_status
+            base_result['lpsn_link'] = species_detail_url
+            
+            print(f"[Debug] 비교 직전 taxonomic_status: '{taxonomic_status}' (Type: {type(taxonomic_status)})")
+            processed_status = str(taxonomic_status).lower().strip().strip('"')
+            print(f"[Debug] 비교 대상 processed_status: '{processed_status}'")
+            if processed_status == 'correct name':
+                base_result['is_verified'] = True
+                title_tag = detail_soup.find('h1', class_='title')
+                if title_tag and title_tag.find('strong'):
+                     valid_name_from_title = title_tag.strong.get_text(separator=" ", strip=True)
+                     if valid_name_from_title:
+                          base_result['valid_name'] = valid_name_from_title
+                          base_result['scientific_name'] = valid_name_from_title
+                          print(f"[Info LPSN Core] 제목에서 유효 학명 추출: {valid_name_from_title}")
+                     else:
+                          base_result['valid_name'] = cleaned_name
+                else:
+                     base_result['valid_name'] = cleaned_name
+            
+            if not base_result.get('taxonomy') or base_result['taxonomy'] == '-':
+                base_result['taxonomy'] = get_default_taxonomy(cleaned_name)
+        else:
+             print(f"[Warning LPSN Core] 최종 detail_soup 확보 실패. 상태: {base_result.get('status', '알수 없음')}")
+             base_result['taxonomy'] = get_default_taxonomy(cleaned_name)
+             base_result['lpsn_link'] = species_detail_url # 실패 시에도 URL은 유지 시도
+             
+        # 위키백과 요약 검색
+        wiki_search_term = base_result.get('valid_name', cleaned_name)
+        if wiki_search_term == '-': wiki_search_term = cleaned_name
+        print(f"[Info LPSN Core] '{wiki_search_term}' 위키백과 요약 검색 시도 (미생물)")
+        base_result['wiki_summary'] = get_wiki_summary(wiki_search_term) or '정보 없음'
+
+        print(f"[Info LPSN Core] LPSN 검증 완료: '{microbe_name}' -> Status: {base_result['status']}")
+        return base_result
+
+    # --- 함수 전체를 try-except로 감싸기 끝 (기존 유지) ---
+    except requests.exceptions.RequestException as req_err:
+        # ... (네트워크 오류 처리 - 이전과 동일) ...
+        print(f"[Error LPSN Core] '{microbe_name}' 네트워크 오류: {req_err}")
+        return {
+            'input_name': microbe_name,
+            'scientific_name': cleaned_name if cleaned_name else microbe_name,
+            'is_verified': False, 'valid_name': '-', 'status': '네트워크 오류',
+            'taxonomy': get_default_taxonomy(cleaned_name), 'lpsn_link': search_url,
+            'wiki_summary': get_wiki_summary(cleaned_name) or '정보 없음',
+            'korean_name': '-', 'is_microbe': True
+        }
+    except Exception as e:
+        # ... (기타 오류 처리 - 이전과 동일) ...
+        print(f"[Error LPSN Core] 미생물 검증 중 예측 못한 오류 발생: {e}")
+        traceback.print_exc()
+        return {
+            'input_name': microbe_name,
+            'scientific_name': cleaned_name if cleaned_name else microbe_name,
+            'is_verified': False, 'valid_name': '-', 'status': f'심각한 오류: {e}',
+            'taxonomy': get_default_taxonomy(cleaned_name), 'lpsn_link': search_url,
+            'wiki_summary': get_wiki_summary(cleaned_name) or '정보 없음',
+            'korean_name': '-', 'is_microbe': True
+        }
+
+
+# --- 기존 verify_microbe_species 함수 수정 --- (콜백 추가)
+def verify_microbe_species(microbe_names_list: List[str], result_callback: Callable = None): # result_callback 인자 추가
     """주어진 미생물 학명 리스트를 검증합니다. (LPSN 기반)
 
     Args:
         microbe_names_list: 검증할 미생물 학명 문자열 리스트.
+        result_callback: 개별 결과 처리를 위한 콜백 함수. (Optional)
 
     Returns:
         각 학명에 대한 검증 결과 딕셔너리의 리스트.
     """
     results = []
+    if not isinstance(microbe_names_list, list):
+        print(f"[Error Verifier Core] 입력값이 리스트가 아님: {type(microbe_names_list)}")
+        return results
+    
     total_items = len(microbe_names_list)
-    print(f"[Info Verifier Core] 미생물 검증 시작 (LPSN Scraping): {total_items}개 항목") # 올바른 항목 수 로깅
+    print(f"[Info Verifier Core] 미생물 검증 시작 (LPSN Scraping): {total_items}개 항목")
 
-    # 리스트의 각 학명 문자열을 순회
     for i, microbe_name in enumerate(microbe_names_list):
-        print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (LPSN): '{microbe_name}'") # 학명 전체 로깅
+        if not isinstance(microbe_name, str):
+            print(f"[Warning Verifier Core] 리스트 항목이 문자열이 아님 (건너뜀): {type(microbe_name)} - {microbe_name}")
+            error_result = {
+                'input_name': str(microbe_name),
+                'scientific_name': '-', 'is_verified': False, 'status': '입력 타입 오류',
+                'valid_name': '-', 'taxonomy': '-', 'lpsn_link': '-', 'wiki_summary': '-', 'korean_name': '-', 'is_microbe': True
+            }
+            # 타입 오류 결과도 콜백으로 전달 가능 (선택적)
+            # if result_callback: result_callback(error_result, "microbe")
+            results.append(error_result)
+            continue
+
+        print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (LPSN): '{microbe_name}'")
         try:
-            # 각 학명 문자열 전체를 단일 검증 함수에 전달
             single_result = verify_single_microbe_lpsn(microbe_name)
             results.append(single_result)
-
-            # 디버그: 개별 결과 확인 (필요시 주석 해제)
-            # print(f"[Debug] 검증 함수 호출 결과 (단일): {single_result}")
+            
+            # --- 결과 콜백 호출 위치 변경 --- 
+            if result_callback:
+                try:
+                    result_callback(single_result.copy(), 'microbe') # 결과 복사본 전달
+                except Exception as cb_err:
+                    print(f"[Error Verifier Core] Result callback failed for '{microbe_name}': {cb_err}")
 
         except Exception as e:
-            print(f"[Error Verifier Core] '{microbe_name}' 처리 중 오류 발생: {e}")
+            print(f"[Error Verifier Core] '{microbe_name}' 처리 중 예측 못한 오류 발생: {e}")
             traceback.print_exc()
-            # 오류 발생 시 기본 오류 결과 추가
-            error_result = create_basic_microbe_result(microbe_name, status=f'오류: {e}')
+            error_result = {
+                'input_name': microbe_name,
+                'scientific_name': '-', 'is_verified': False, 'status': f'심각한 오류: {e}',
+                'valid_name': '-', 'taxonomy': '-', 'lpsn_link': '-', 'wiki_summary': '-', 'korean_name': '-', 'is_microbe': True
+            }
+            # 오류 결과도 콜백으로 전달 가능 (선택적)
+            # if result_callback: result_callback(error_result, "microbe")
             results.append(error_result)
 
-    print(f"[Info Verifier Core] 미생물 검증 완료 (LPSN Scraping): {len(results)}개 결과 생성") # 올바른 결과 수 로깅
+    print(f"[Info Verifier Core] 미생물 검증 완료 (LPSN Scraping): {len(results)}개 결과 생성")
     return results
 
 
 # --- 모의 결과 생성 함수 (참고용) ---
-def create_mock_microbe_result(microbe_name: str) -> Dict[str, Any]:
-    """테스트용 가상 미생물 결과를 생성 (microbe_verifier.py에서 가져옴 - 실제 사용 안 함)"""
-    # ... (이 함수는 microbe_verifier.py에서 사용되므로 여기서는 참고용)
-    pass
+# def create_mock_microbe_result(microbe_name: str) -> Dict[str, Any]: # 이 함수는 필요 없으므로 주석 처리 또는 삭제 권장
+#     \"\"\"테스트용 가상 미생물 결과를 생성 (microbe_verifier.py에서 가져옴 - 실제 사용 안 함)\"\"\"
+#     # ... (이 함수는 microbe_verifier.py에서 사용되므로 여기서는 참고용)
+#     pass

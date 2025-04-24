@@ -7,6 +7,8 @@
 import os
 import tkinter as tk
 import threading
+import queue # queue 임포트
+import traceback # traceback 임포트
 import customtkinter as ctk
 from tkinter import filedialog
 from typing import Optional, List, Dict, Any, Tuple, Union
@@ -47,6 +49,12 @@ class SpeciesVerifierApp(ctk.CTk):
         # self.active_tab = "해양생물" 
         self.current_results_marine = []  # 해양생물 탭 결과
         self.current_results_microbe = []  # 미생물 탭 결과
+        self.is_verifying = False # 현재 검증 작업 진행 여부 플래그
+        self.result_queue = queue.Queue() # 결과 처리를 위한 큐
+        
+        # 디버그 로그: 초기 self ID 및 메인 스레드 ID 기록
+        self.main_thread_id = threading.get_ident()
+        print(f"[Debug Init] Initial self ID: {id(self)}, Type: {type(self)}, Main Thread ID: {self.main_thread_id}")
         
         # 플레이스홀더 텍스트 설정
         self.placeholder_focused = "예: Homo sapiens, Gadus morhua"
@@ -88,6 +96,9 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 콜백 설정
         self._setup_callbacks()
+        
+        # 큐 처리기 시작
+        self._process_result_queue()
     
     def _create_widgets(self):
         """UI 컴포넌트 생성"""
@@ -241,6 +252,10 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 해양생물 탭 콜백 함수 ---
     def _marine_search(self, input_text: str, tab_name: str = "marine"):
         """해양생물 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+        
         if not input_text:
             return
         
@@ -276,6 +291,10 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _marine_file_search(self, file_path: str, tab_name: str = "marine"):
         """해양생물 파일 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+            
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
@@ -286,6 +305,10 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 미생물 탭 콜백 함수 ---
     def _microbe_search(self, input_text: str, tab_name: str = "microbe"):
         """미생물 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+            
         if not input_text:
             return
             
@@ -309,6 +332,10 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _microbe_file_search(self, file_path: str, tab_name: str = "microbe"):
         """미생물 파일 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+            
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
@@ -441,12 +468,20 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 헤더 영역이고 특정 컬럼인 경우 툴팁 표시
         if region == "heading":
-            if column_id == "#3":  # Taxonomy 컬럼 헤더
+            # --- 디버깅 로그 추가 ---
+            print(f"[Debug Tooltip] Hovering header region. Identified column_id: {column_id}") 
+            
+            # --- 수정: 컬럼 ID와 툴팁 매핑 확인 및 조정 ---
+            # Treeview 컬럼 인덱스는 #0부터 시작하지만, identify_column은 #1부터 반환하는 경향이 있음.
+            # 실제 컬럼: #1(학명), #2(검증), #3(상태), #4(분류), #5(LPSN 링크), #6(위키)
+            # 따라서, 분류=#4, LPSN링크=#5, 위키=#6 으로 추정하고 조건문 수정
+            if column_id == "#4":  # 분류 컬럼 헤더 (기존 #3)
                 tooltip_text = "분류학적 위치 정보"
-            elif column_id == "#4":  # LPSN Link 컬럼 헤더
+            elif column_id == "#5":  # LPSN Link 컬럼 헤더 (기존 #4)
                 tooltip_text = "더블 클릭 시 LPSN 웹사이트 확인"
-            elif column_id == "#5":  # Wiki Summary 컬럼 헤더
+            elif column_id == "#6":  # Wiki Summary 컬럼 헤더 (기존 #5)
                 tooltip_text = "더블 클릭 시 위키백과 요약 팝업창 확인"
+            # --- 수정 끝 ---
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
         elif region == "cell":
@@ -485,6 +520,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 진행 UI 표시
         self._show_progress_ui("검증 준비 중...")
         self._set_ui_state("disabled")
+        self.is_verifying = True # 검증 시작 플래그 설정
         
         # 검증 스레드 시작
         threading.Thread(
@@ -503,21 +539,20 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_verification(self, verification_list_input: Union[List[str], List[Tuple[str, str]]]):
         """해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
-        # 브릿지 모듈의 함수 호출 (result_callback 추가)
+        # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
         results = perform_verification(
             verification_list_input, 
             self.update_progress, 
             self._update_progress_label,
-            result_callback=self._update_single_result # 단일 결과 처리 콜백 전달
+            # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
+            result_callback=lambda r, t: self.result_queue.put((r, t)) 
         )
         
-        # 결과가 콜백으로 실시간 처리되므로, 여기서 최종 결과 표시는 제거
-        # if results:
-        #     self.after(0, lambda: self._update_results_display(results, "marine"))
-        
-        # UI 상태 복원 (검증 완료 후)
+        # 백그라운드 작업 완료 후 플래그 해제 및 UI 복원
+        # self.after(0, lambda: self._update_results_display(results, "marine")) # 전체 결과 표시는 제거 (개별 처리됨)
         self.after(0, lambda: self._reset_status_ui())
         self.after(0, lambda: self._set_ui_state("normal"))
+        self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
         # 완료 후 포커스 설정은 유지
         if self.marine_tab:
             self.after(0, lambda: self.marine_tab.focus_entry())
@@ -533,6 +568,7 @@ class SpeciesVerifierApp(ctk.CTk):
             
         self._show_progress_ui(initial_msg)
         self._set_ui_state("disabled")
+        self.is_verifying = True # 검증 시작 플래그 설정
         
         # 검증 스레드 시작 (context 전달)
         threading.Thread(
@@ -551,18 +587,20 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
-        # 브릿지 모듈의 함수 호출 (result_callback 및 context 추가)
+        # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
         results = perform_microbe_verification(
             microbe_names_list,
             self.update_progress,
             self._update_progress_label,
-            result_callback=self._update_single_result, # 단일 결과 처리 콜백 전달
+             # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
+            result_callback=lambda r, t: self.result_queue.put((r, t)),
             context=context # context 전달
         )
         
         # UI 상태 복원 (검증 완료 후)
-        self.after(0, lambda: self._reset_status_ui()) # 완료 메시지는 microbe_verifier에서 설정
+        self.after(0, lambda: self._reset_status_ui())
         self.after(0, lambda: self._set_ui_state("normal"))
+        self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
         if self.microbe_tab:
             self.after(0, lambda: self.microbe_tab.focus_entry())
     
@@ -649,6 +687,43 @@ class SpeciesVerifierApp(ctk.CTk):
         # 텍스트 입력이나 파일 선택 여부에 따라 verify_button의 'normal' 상태를 
         # 세부적으로 관리합니다. 여기서는 전체적인 활성화/비활성화만 제어합니다.
     
+    def _process_result_queue(self):
+        """결과 큐를 주기적으로 확인하고 GUI를 업데이트합니다."""
+        try:
+            # 큐에서 모든 사용 가능한 항목 가져오기 (블로킹 없이)
+            while True:
+                 result_data = self.result_queue.get_nowait()
+                 # 디버그 로그: 큐 처리 시점의 self 및 스레드 확인
+                 current_thread_id = threading.get_ident()
+                 print(f"[Debug Queue Process] Current self ID: {id(self)}, Type: {type(self)}, Current Thread ID: {current_thread_id}, Is Main Thread: {current_thread_id == self.main_thread_id}")
+                 
+                 # 추가 디버그: 다른 속성 접근 및 hasattr 확인
+                 try:
+                     print(f"[Debug Queue Process] Accessing self.title(): {self.title()}")
+                     print(f"[Debug Queue Process] hasattr _update_single_result: {hasattr(self, '_update_single_result')}")
+                 except Exception as e_debug:
+                     print(f"[Error Debug] Error during self check: {e_debug}")
+                     
+                 # 큐에서 가져온 데이터는 (결과 딕셔너리, 탭 타입 문자열) 튜플이어야 함
+                 if isinstance(result_data, tuple) and len(result_data) == 2:
+                      result_dict, tab_type = result_data
+                      # _process_result_queue는 이미 메인 스레드에서 실행되므로 직접 호출 시도
+                      self._update_single_result(result_dict, tab_type)
+                 else:
+                      print(f"[Warning] Invalid data format in queue: {result_data}")
+                 # task_done은 if/else와 같은 레벨이어야 함
+                 self.result_queue.task_done() 
+
+        except queue.Empty:
+            # 큐가 비어있으면 아무것도 하지 않음
+            pass
+        except Exception as e:
+             print(f"[Error] Error processing result queue: {e}")
+             traceback.print_exc()
+        finally:
+            # 100ms 후에 다시 큐 확인 예약
+            self.after(100, self._process_result_queue)
+
     def _cancel_operation(self):
         """작업 취소"""
         # 구현 예정: 스레드 종료 등
@@ -799,130 +874,206 @@ class SpeciesVerifierApp(ctk.CTk):
         self.clipboard_append(text)
         self.show_centered_message("info", "복사 완료", "내용이 클립보드에 복사되었습니다.")
         
-    def _show_context_menu(self, event, tree):
-        """트리뷰 항목에 대한 컨텍스트 메뉴를 표시합니다."""
-        # 디버그 로그 추가
-        print(f"[Debug] _show_context_menu called for tree: {tree}") 
-        
-        item_id = tree.identify_row(event.y)
-        
-        # 컨텍스트 메뉴 생성 (항상 생성 시도)
+    def _show_context_menu(self, event, tree_type):
+        """결과 트리뷰에서 마우스 오른쪽 버튼 클릭 시 컨텍스트 메뉴를 표시합니다."""
         context_menu = tk.Menu(self, tearoff=0)
-        
-        # 아이템 관련 메뉴 (아이템 위에서 우클릭했을 때만 추가)
-        if item_id:
-            tree.selection_set(item_id)
-            # 복사 옵션 추가
-            context_menu.add_command(label="항목 복사", command=lambda: self._copy_all_info(tree, item_id))
-            context_menu.add_command(label="항목 삭제", command=lambda: self._remove_tree_item(tree, item_id))
-            values = tree.item(item_id, "values")
-            wiki_summary = None
-            wiki_title = tree.item(item_id, "text") if item_id else ""
-            # ResultTreeview 내부의 실제 tree 위젯과 비교
-            if tree == self.result_tree_marine.tree and len(values) > 5:
-                wiki_summary = values[5]
-            elif tree == self.result_tree_microbe.tree and len(values) > 4:
-                wiki_summary = values[4]
-            if wiki_summary and wiki_summary != "-":
-                context_menu.add_command(
-                    label="위키 정보 보기", 
-                    command=lambda t=wiki_title, s=wiki_summary: self._show_wiki_summary_popup(t, s)
-                )
-            context_menu.add_separator()
+        item_id = None # 클릭된 항목 ID
 
-        # 전체 결과 관련 메뉴
-        has_results_in_tree = bool(tree.get_children()) # Treeview 위젯 확인
-        has_results_in_list = False # 내부 리스트 확인
-        # 어떤 tree인지 확인하여 해당 리스트 검사
-        if tree == self.result_tree_marine.tree:
-            has_results_in_list = bool(self.current_results_marine)
-        elif tree == self.result_tree_microbe.tree:
-            has_results_in_list = bool(self.current_results_microbe)
-            
-        excel_save_state = "normal" if (has_results_in_tree or has_results_in_list) else "disabled"
-        
-        # 디버그 로그 추가
-        print(f"[Debug] Context Menu - Has Results(Tree): {has_results_in_tree}, Has Results(List): {has_results_in_list}, Excel Save State: {excel_save_state}")
-        
-        # Excel로 저장 옵션 항상 추가 (상태만 변경)
-        context_menu.add_command(label="Excel로 저장", 
-                                 command=self.export_results_to_excel, 
-                                 state=excel_save_state)
-        
-        # 메뉴 표시 시도
+        if tree_type == 'marine':
+            tree = self.result_tree_marine.tree
+            current_results = self.current_results_marine
+        elif tree_type == 'microbe':
+            tree = self.result_tree_microbe.tree
+            current_results = self.current_results_microbe
+        else:
+            return # 알 수 없는 트리 타입
+
+        # 클릭 위치에 항목이 있는지 확인
         try:
-             print("[Debug] Attempting to popup context menu...") # 디버그 로그 추가
-             context_menu.tk_popup(event.x_root, event.y_root)
-             print("[Debug] Context menu popup successful.") # 디버그 로그 추가
-        except Exception as e:
-             print(f"[Error] Failed to popup context menu: {e}") # 오류 로깅 추가
+            item_id = tree.identify_row(event.y)
+        except tk.TclError: # 빈 공간 클릭 시 에러 방지
+            item_id = None
+        
+        if item_id:
+            tree.selection_set(item_id) # 클릭된 항목 선택
+            # 개별 항목 복사 메뉴 추가
+            context_menu.add_command(label="항목 복사", command=lambda: self._copy_all_info(tree, item_id))
+            context_menu.add_separator() # 구분선 추가
+        
+        # 결과가 있을 때만 Excel 저장 메뉴 활성화
+        # current_results가 비어있어도 Treeview에 직접 결과가 있을 수 있으므로 확인
+        has_results = bool(current_results or tree.get_children())
+        excel_export_state = tk.NORMAL if has_results else tk.DISABLED
+        context_menu.add_command(label="Excel로 저장", command=self.export_results_to_excel, state=excel_export_state)
+
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
         finally:
              context_menu.grab_release()
 
+    def export_results_to_excel(self):
+        """현재 활성화된 탭의 결과를 Excel 파일로 저장합니다."""
+        current_tab_name = self.tab_view.get()
+        results_to_export = []
+        columns_info = []
+        default_filename = "verification_results.xlsx"
+
+        if current_tab_name == "해양생물":
+            results_to_export = self.current_results_marine
+            tree = self.result_tree_marine.tree
+            columns_info = [
+                ("input_name", "입력명"), # Treeview의 text 컬럼
+                ("mapped_name", "학명"),
+                ("verified", "검증"),
+                ("worms_status", "WoRMS 상태"),
+                ("worms_id", "WoRMS ID"),
+                ("worms_url", "WoRMS URL"),
+                ("wiki_summary", "위키백과 요약")
+            ]
+            default_filename = "marine_verification_results.xlsx"
+        elif current_tab_name == "미생물 (LPSN)":
+            results_to_export = self.current_results_microbe
+            tree = self.result_tree_microbe.tree
+            columns_info = [
+                ("input_name", "입력명"), # Treeview의 text 컬럼
+                ("valid_name", "유효 학명"), # Treeview 컬럼 #1
+                ("verified", "검증"), # Treeview 컬럼 #2
+                ("status", "상태"), # Treeview 컬럼 #3
+                ("taxonomy", "분류"), # Treeview 컬럼 #4
+                ("lpsn_link", "LPSN 링크"), # Treeview 컬럼 #5
+                ("wiki_summary", "위키백과 요약") # Treeview 컬럼 #6
+            ]
+            default_filename = "microbe_verification_results.xlsx"
+        else:
+            self.show_centered_message("warning", "내보내기 오류", "결과를 내보낼 활성 탭을 인식할 수 없습니다.")
+            return
+
+        if not results_to_export:
+            # Treeview에 직접 결과가 있는지 확인 (current_results 리스트가 비었을 경우)
+            if not tree.get_children():
+                self.show_centered_message("info", "내보내기", "내보낼 결과가 없습니다.")
+                return
+            else:
+                 # Treeview에서 직접 데이터 읽기 (대체 로직)
+                 print("[Warning] Exporting directly from Treeview as current_results is empty.")
+                 results_to_export = []
+                 for item_id in tree.get_children():
+                      item_data = {"input_name": tree.item(item_id, "text")} # 첫 컬럼(입력명) 추가
+                      values = tree.item(item_id, "values")
+                      # 컬럼 정보와 values 매칭
+                      for i, (key, _) in enumerate(columns_info[1:]): # 첫 컬럼 제외하고 매칭
+                           if i < len(values):
+                                item_data[key] = values[i]
+                           else:
+                                item_data[key] = "-" # 값이 없으면 기본값
+                      results_to_export.append(item_data)
+                 if not results_to_export:
+                     self.show_centered_message("info", "내보내기", "Treeview에서 결과를 읽을 수 없습니다.")
+                     return
+
+        # 파일 저장 경로 선택
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel 파일", "*.xlsx")],
+            title="결과 저장 위치 선택",
+            initialfile=default_filename
+        )
+
+        if not file_path:
+            return # 사용자가 취소
+
+        try:
+            # pandas DataFrame 생성
+            # 컬럼 순서를 columns_info 기준으로 지정
+            df_columns = [col_key for col_key, _ in columns_info]
+            df = pd.DataFrame(results_to_export, columns=df_columns) 
+            
+            # DataFrame 컬럼 이름을 한글 헤더로 변경
+            df.rename(columns={col_key: col_header for col_key, col_header in columns_info}, inplace=True)
+
+            # Excel 파일로 저장
+            df.to_excel(file_path, index=False)
+            
+            self.show_centered_message("info", "저장 완료", f"결과가 성공적으로 저장되었습니다.\n 경로: {file_path}")
+
+        except Exception as e:
+            import traceback
+            print(f"[Error] Excel 저장 오류: {e}")
+            print(traceback.format_exc())
+            self.show_centered_message("error", "저장 실패", f"결과를 저장하는 중 오류가 발생했습니다.\n 오류: {e}")
+
     def _copy_all_info(self, tree, item_id):
         """선택한 항목의 모든 정보를 클립보드에 복사합니다."""
-        text = tree.item(item_id, "text")
-        values = tree.item(item_id, "values")
-        
-        # 트리뷰에 따라 다른 형식으로 정보 구성
-        if tree == self.result_tree_marine:
-            info_text = f"입력명: {text}\n"
-            if len(values) > 0: info_text += f"학명: {values[0]}\n"
-            if len(values) > 1: info_text += f"출처: {values[1]}\n"
-            if len(values) > 2: info_text += f"상태: {values[2]}\n"
-            if len(values) > 3: info_text += f"WoRMS ID: {values[3]}\n"
-            if len(values) > 4: info_text += f"WoRMS 링크: {values[4]}\n"
-            if len(values) > 5: info_text += f"종정보: {values[5]}\n"
-        else:  # 미생물 트리뷰
-            info_text = f"학명: {text}\n"
-            if len(values) > 0: info_text += f"유효학명: {values[0]}\n"
-            if len(values) > 1: info_text += f"상태: {values[1]}\n"
-            if len(values) > 2: info_text += f"분류정보: {values[2]}\n"
-            if len(values) > 3: info_text += f"LPSN 링크: {values[3]}\n"
-            if len(values) > 4: info_text += f"종정보: {values[4]}\n"
-        
-        # 클립보드에 복사
-        self._copy_to_clipboard(info_text)
-        
-    def _remove_tree_item(self, tree, item_id):
-        """트리뷰에서 항목을 삭제합니다."""
-        # 항목 삭제 전 확인
-        from tkinter import messagebox
-        result = messagebox.askyesno("항목 삭제", "선택한 항목을 정말 삭제하시겠습니까?")
-        
-        if result:
-            # 현재 탭에 따라 적절한 결과 리스트에서도 삭제
-            if tree == self.result_tree_marine:
-                index = tree.index(item_id)
-                if 0 <= index < len(self.current_results_marine):
-                    self.current_results_marine.pop(index)
-            elif tree == self.result_tree_microbe:
-                index = tree.index(item_id)
-                if 0 <= index < len(self.current_results_microbe):
-                    self.current_results_microbe.pop(index)
-                    
-            # 트리뷰에서 삭제
-            tree.delete(item_id)
+        try:
+            # 트리 타입 확인 (클래스 이름으로 구분)
+            tree_type = 'marine' if isinstance(tree.master, self.result_tree_marine.__class__) else 'microbe'
 
-    # --- 새로운 메서드: 단일 결과 업데이트 (수정됨) --- 
-    # tab_type 인자 추가
+            # 헤더 정보 가져오기
+            if tree_type == 'marine':
+                headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
+                # 컬럼 키 정보 (Excel 저장 시 사용했던 정보 활용 가능)
+                columns_info = [
+                    ("input_name", "입력명"), ("mapped_name", "학명"), ("verified", "검증"),
+                    ("worms_status", "WoRMS 상태"), ("worms_id", "WoRMS ID"), 
+                    ("worms_url", "WoRMS URL"), ("wiki_summary", "위키백과 요약")
+                ]
+            else: # microbe
+                headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
+                columns_info = [
+                    ("input_name", "입력명"), ("valid_name", "유효 학명"), ("verified", "검증"),
+                    ("status", "상태"), ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"),
+                    ("wiki_summary", "위키백과 요약")
+                ]
+
+            item = tree.item(item_id)
+            values = [item['text']] + list(item['values']) # 첫 번째 컬럼(text)과 나머지 컬럼 값들
+
+            # 헤더와 값 매칭
+            info_lines = []
+            for i, header in enumerate(headers):
+                value = values[i] if i < len(values) else ""
+                # 위키 요약은 너무 길 수 있으므로 처음 몇 자만 포함하거나 제외 고려
+                if columns_info[i][0] == "wiki_summary" and len(str(value)) > 100: 
+                     value = str(value)[:100] + "..." # 예시: 100자 초과 시 축약
+                elif columns_info[i][0] in ["worms_url", "lpsn_link"] and not value:
+                     value = "N/A" # 링크 없는 경우
+                
+                info_lines.append(f"{header}: {value}")
+
+            copy_text = "\\n".join(info_lines)
+            self._copy_to_clipboard(copy_text)
+            
+            # 상태 표시줄에 간단한 메시지 표시
+            self.status_bar.set_status(f"'{item['text']}' 정보가 클립보드에 복사되었습니다.")
+            self.after(3000, self._reset_status_ui) # 3초 후 상태 초기화
+
+        except Exception as e:
+            print(f"[Error] 정보 복사 중 오류: {e}")
+            self.status_bar.set_status("정보 복사 실패.")
+            self.after(3000, self._reset_status_ui)
+
+    # --- 새로운 메서드: 단일 결과 업데이트 --- 
     def _update_single_result(self, result: Dict[str, Any], tab_type: str):
-        """개별 검증 결과를 받아 GUI에 업데이트 (메인 스레드에서 실행되도록 예약)"""
+        """개별 검증 결과를 받아 GUI에 업데이트 (메인 스레드에서 실행)"""
         if not result:
             return
-            
-        # 현재 활성 탭 대신 전달받은 tab_type으로 대상 트리 결정
-        # current_tab_name = self.tab_view.get() # 이 줄 제거
+
         target_tree = None
+        target_results_list = None
 
         if tab_type == "marine":
             target_tree = self.result_tree_marine
+            target_results_list = self.current_results_marine
         elif tab_type == "microbe":
             target_tree = self.result_tree_microbe
+            target_results_list = self.current_results_microbe
         
         if target_tree:
-            # 메인 스레드에서 실행되도록 예약
-            self.after(0, lambda res=result, tree=target_tree: tree.add_result(res))
+            # ResultTreeview의 add_result 메서드 호출 (결과 추가 및 UI 업데이트)
+            target_tree.add_result(result) 
+            # 내부 결과 리스트에도 추가 (선택적, Excel 저장 등을 위해 필요할 수 있음)
+            if target_results_list is not None:
+                 target_results_list.append(result)
         else:
              print(f"[Error] Cannot update single result: Unknown tab_type '{tab_type}'")
 
