@@ -240,12 +240,13 @@ class SpeciesVerifierApp(ctk.CTk):
         # --- 탭 뷰 생성 ---
         self.tab_view = ctk.CTkTabview(self, command=self._on_tab_change)
         self.tab_view.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nsew")
-        self.tab_view.add("해양생물")
+        self.tab_view.add("해양생물(WoRMS)")
         self.tab_view.add("미생물 (LPSN)")
+        self.tab_view.add("통합생물(COL)")
         # --- 탭 뷰 생성 끝 ---
 
-        # --- "해양생물" 탭 설정 ---
-        marine_tab = self.tab_view.tab("해양생물")
+        # --- "해양생물(WoRMS)" 탭 설정 ---
+        marine_tab = self.tab_view.tab("해양생물(WoRMS)")
         marine_tab.grid_columnconfigure(0, weight=1)
         marine_tab.grid_rowconfigure(0, weight=0) # Input frame
         marine_tab.grid_rowconfigure(1, weight=1) # Result frame
@@ -264,6 +265,22 @@ class SpeciesVerifierApp(ctk.CTk):
 
         # --- "미생물 (LPSN)" 탭 설정 ---
         microbe_tab = self.tab_view.tab("미생물 (LPSN)")
+
+        # --- "통합생물(COL)" 탭 설정 ---
+        from species_verifier.gui.components.col_tab import ColTabFrame
+        col_tab = self.tab_view.tab("통합생물(COL)")
+        col_tab.grid_columnconfigure(0, weight=1)
+        col_tab.grid_rowconfigure(0, weight=0)
+        col_tab.grid_rowconfigure(1, weight=1)
+        # 입력 프레임 ("통합생물(COL)" 탭)
+        self.input_frame_col = ctk.CTkFrame(col_tab)
+        self.input_frame_col.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+        self.input_frame_col.grid_columnconfigure(1, weight=1)
+        # 결과 프레임 ("통합생물(COL)" 탭)
+        self.result_frame_col = ctk.CTkFrame(col_tab)
+        self.result_frame_col.grid(row=1, column=0, padx=0, pady=(10, 0), sticky="nsew")
+        self.result_frame_col.grid_rowconfigure(0, weight=1)
+        self.result_frame_col.grid_columnconfigure(0, weight=1)
         microbe_tab.grid_columnconfigure(0, weight=1)
         microbe_tab.grid_rowconfigure(0, weight=0) # Input frame microbe
         microbe_tab.grid_rowconfigure(1, weight=1) # Result frame microbe

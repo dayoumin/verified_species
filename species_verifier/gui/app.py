@@ -21,6 +21,7 @@ import pandas as pd
 from species_verifier.config import app_config, ui_config
 from species_verifier.gui.components.marine_tab import MarineTabFrame
 from species_verifier.gui.components.microbe_tab import MicrobeTabFrame
+from species_verifier.gui.components.col_tab import ColTabFrame
 from species_verifier.gui.components.status_bar import StatusBar
 from species_verifier.gui.components.result_view import ResultTreeview
 from species_verifier.models.verification_results import MarineVerificationResult, MicrobeVerificationResult
@@ -49,6 +50,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # self.active_tab = "해양생물" 
         self.current_results_marine = []  # 해양생물 탭 결과
         self.current_results_microbe = []  # 미생물 탭 결과
+        self.current_results_col = []     # 통합생물(COL) 탭 결과
         self.is_verifying = False # 현재 검증 작업 진행 여부 플래그
         self.result_queue = queue.Queue() # 결과 처리를 위한 큐
         
@@ -137,11 +139,12 @@ class SpeciesVerifierApp(ctk.CTk):
         self.tab_view.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="nsew") # pady 상단 추가
 
         # 탭 추가
-        self.tab_view.add("해양생물")
+        self.tab_view.add("해양생물(WoRMS)")
         self.tab_view.add("미생물 (LPSN)")
+        self.tab_view.add("통합생물(COL)")
 
         # --- 해양생물 탭 컨텐츠 배치 (기존과 동일, 부모만 확인) ---
-        marine_tab_content = self.tab_view.tab("해양생물")
+        marine_tab_content = self.tab_view.tab("해양생물(WoRMS)")
         marine_tab_content.grid_columnconfigure(0, weight=1)
         marine_tab_content.grid_rowconfigure(0, weight=0)
         marine_tab_content.grid_rowconfigure(1, weight=0)
@@ -215,6 +218,26 @@ class SpeciesVerifierApp(ctk.CTk):
         # ResultTreeview의 내부 widget (CTkFrame)을 grid로 배치
         self.result_tree_microbe.widget.grid(row=2, column=0, sticky="nsew", padx=5, pady=(0, 5))
         
+        # --- COL(통합생물) 탭 ---
+        print("[DEBUG] COL 탭 컨텐츠 위젯 생성 시작")
+        col_tab_content = self.tab_view.tab("통합생물(COL)")
+        col_tab_content.grid_columnconfigure(0, weight=1)
+        col_tab_content.grid_rowconfigure(0, weight=0)
+        col_tab_content.grid_rowconfigure(1, weight=0)
+        col_tab_content.grid_rowconfigure(2, weight=1)
+        print("[DEBUG] ColTabFrame 인스턴스 생성 시도")
+        self.col_tab = ColTabFrame(
+            col_tab_content,
+            font=self.default_font,
+            bold_font=self.default_bold_font,
+            placeholder_text="예: Homo sapiens, Gadus morhua",
+            max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT,
+            direct_export_threshold=self.DIRECT_EXPORT_THRESHOLD
+        )
+        print("[DEBUG] ColTabFrame 인스턴스 생성 완료, grid 배치 시도")
+        self.col_tab.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        print("[DEBUG] ColTabFrame grid 배치 완료")
+
         # --- 상태 바 생성 (2행으로 이동) ---
         self.status_bar = StatusBar(
             self,
@@ -255,6 +278,14 @@ class SpeciesVerifierApp(ctk.CTk):
             on_file_browse=self._microbe_file_browse,
             on_file_search=self._microbe_file_search
         )
+
+        # 통합생물(COL) 탭 콜백
+        self.col_tab.set_callbacks(
+            on_search=self._col_search,
+            on_file_browse=self._col_file_browse,
+            on_file_search=self._col_file_search
+        )
+
     
     # --- 해양생물 탭 콜백 함수 ---
     def _marine_search(self, input_text: str, tab_name: str = "marine"):
@@ -282,12 +313,74 @@ class SpeciesVerifierApp(ctk.CTk):
                 if scientific_name:
                     self._start_verification_thread([(input_text, scientific_name)])
                 else:
-                    self.show_centered_message("warning", "한글명 매핑 실패", 
-                                               f"'{input_text}'에 해당하는 학명을 찾을 수 없습니다.")
+                    self.show_centered_message("warning", "한글명 매핑 실패") 
+
+    # --- COL(통합생물) 탭 콜백 함수 ---
+    def _col_search(self, input_text: str, tab_name: str = "col"):
+        """COL 통합생물 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+        if not input_text:
+            return
+        input_text = input_text.strip()
+        # 여러 학명이 콤마로 구분되어 있는지 확인
+        if "," in input_text:
+            names_list = [name.strip() for name in input_text.split(",") if name.strip()]
+            if names_list:
+                self._start_col_verification_thread(names_list)
+        else:
+            # 단일 학명 또는 한글명 처리
+            if any(self._is_korean(char) for char in input_text):
+                scientific_name = self._find_scientific_name_from_korean_name(input_text)
+                if scientific_name:
+                    self._start_col_verification_thread([(input_text, scientific_name)])
+                else:
+                    self.show_centered_message("warning", "한글명 매핑 실패", f"'{input_text}'에 대한 학명 매핑을 찾을 수 없습니다.")
             else:
-                # 학명인 경우 바로 검증
-                self._start_verification_thread([input_text])
-    
+                self._start_col_verification_thread([input_text])
+
+    def _col_file_browse(self, file_path: str, tab_name: str = "col"):
+        """COL 파일 찾기 콜백 (옵션, 필요시 구현)"""
+        # 파일 브라우즈 시 상태 바 등 UI 갱신 필요시 구현
+        pass
+
+    def _col_file_search(self, file_path: str, tab_name: str = "col"):
+        """COL 파일 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+        if not file_path or not os.path.exists(file_path):
+            return
+        self._process_col_file(file_path)
+
+    def _start_col_verification_thread(self, verification_list):
+        # COL 글로벌 API를 이용한 검증 스레드 시작
+        import threading
+        thread = threading.Thread(target=self._perform_col_verification, args=(verification_list,))
+        thread.daemon = True
+        thread.start()
+
+    def _perform_col_verification(self, verification_list):
+        # COL 글로벌 API를 이용한 검증 (백그라운드)
+        from species_verifier.col_api import verify_col_species
+        results = []
+        for name in verification_list:
+            if isinstance(name, (tuple, list)):
+                query = name[1] if len(name) > 1 else name[0]
+            else:
+                query = name
+            result = verify_col_species(query)
+            results.append(result)
+        # 결과를 메인스레드에서 트리뷰에 업데이트
+        self.after(0, lambda: self._update_results_display(results, tab_name="col", clear_first=True))
+
+    def _process_col_file(self, file_path: str):
+        # TODO: COL 전용 파일 처리 함수로 연결
+        # 예시: self._process_file(file_path)
+        self._process_file(file_path)
+
+
     def _marine_file_browse(self) -> Optional[str]:
         """해양생물 파일 선택 콜백"""
         file_path = filedialog.askopenfilename(
@@ -671,12 +764,19 @@ class SpeciesVerifierApp(ctk.CTk):
         current_tab_name = self.tab_view.get() # 현재 활성화된 탭 이름 가져오기
             
         # 결과를 적절한 Treeview에 표시
-        if current_tab_name == "해양생물":
+        if current_tab_name == "해양생물(WoRMS)":
             self.result_tree_marine.add_results(results_list, clear_first)
             self.current_results_marine.extend(results_list)
         elif current_tab_name == "미생물 (LPSN)":
             self.result_tree_microbe.add_results(results_list, clear_first)
             self.current_results_microbe.extend(results_list)
+        elif current_tab_name == "통합생물(COL)":
+            if not hasattr(self, 'current_results_col'):
+                self.current_results_col = []
+            self.col_tab.result_tree.delete(*self.col_tab.result_tree.get_children())
+            for row in results_list:
+                self.col_tab.result_tree.insert("", "end", values=(row.get("학명", "-"), row.get("검증", "-"), row.get("COL 상태", "-"), row.get("COL ID", "-"), row.get("COL URL", "-"), row.get("위키백과 요약", "-")))
+            self.current_results_col.extend(results_list)
     
     def _update_progress_label(self, text: str):
         """진행 상태 레이블 업데이트"""
@@ -733,64 +833,40 @@ class SpeciesVerifierApp(ctk.CTk):
 
     # --- 결과 유무 확인 헬퍼 함수 추가 ---
     def _check_results_exist(self) -> bool:
-         """현재 활성 탭에 결과가 있는지 확인합니다."""
-         if not hasattr(self, 'tab_view'): # tab_view 로드 전 호출 방지
-              print("[Debug Check Results] tab_view not found.")
-              return False
-         current_tab_name = self.tab_view.get()
-         print(f"[Debug Check Results] Checking results for tab: {current_tab_name}")
-
-         if current_tab_name == "해양생물":
-             results_list = self.current_results_marine if hasattr(self, 'current_results_marine') else None
-             list_exists = results_list is not None
-             list_not_empty = bool(results_list)
-             print(f"[Debug Check Results - Marine] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
-             return list_exists and list_not_empty
-         elif current_tab_name == "미생물 (LPSN)":
-             results_list = self.current_results_microbe if hasattr(self, 'current_results_microbe') else None
-             list_exists = results_list is not None
-             list_not_empty = bool(results_list)
-             print(f"[Debug Check Results - Microbe] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
-             return list_exists and list_not_empty
-
-         print(f"[Debug Check Results] Unknown tab name: {current_tab_name}")
-         return False
+        """현재 활성 탭에 결과가 있는지 확인합니다."""
+        if not hasattr(self, 'tab_view'):
+            return False
+        current_tab_name = self.tab_view.get()
+        if current_tab_name == "해양생물(WoRMS)":
+            results_list = self.current_results_marine
+        elif current_tab_name == "미생물 (LPSN)":
+            results_list = self.current_results_microbe
+        elif current_tab_name == "통합생물(COL)":
+            results_list = self.current_results_col
+        else:
+            print(f"[Debug Check Results] Unknown tab name: {current_tab_name}")
+            return False
+        list_exists = results_list is not None
+        list_not_empty = bool(results_list)
+        print(f"[Debug Check Results - {current_tab_name}] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
+        return list_exists and list_not_empty
 
     def _process_result_queue(self):
-        """결과 큐를 주기적으로 확인하고 GUI를 업데이트합니다."""
         try:
-            # 큐에서 모든 사용 가능한 항목 가져오기 (블로킹 없이)
             while True:
-                 result_data = self.result_queue.get_nowait()
-                 # 디버그 로그: 큐 처리 시점의 self 및 스레드 확인
-                 current_thread_id = threading.get_ident()
-                 print(f"[Debug Queue Process] Current self ID: {id(self)}, Type: {type(self)}, Current Thread ID: {current_thread_id}, Is Main Thread: {current_thread_id == self.main_thread_id}")
-                 
-                 # 추가 디버그: 다른 속성 접근 및 hasattr 확인
-                 try:
-                     print(f"[Debug Queue Process] Accessing self.title(): {self.title()}")
-                     print(f"[Debug Queue Process] hasattr _update_single_result: {hasattr(self, '_update_single_result')}")
-                 except Exception as e_debug:
-                     print(f"[Error Debug] Error during self check: {e_debug}")
-                     
-                 # 큐에서 가져온 데이터는 (결과 딕셔너리, 탭 타입 문자열) 튜플이어야 함
-                 if isinstance(result_data, tuple) and len(result_data) == 2:
-                      result_dict, tab_type = result_data
-                      # _process_result_queue는 이미 메인 스레드에서 실행되므로 직접 호출 시도
-                      self._update_single_result(result_dict, tab_type)
-                 else:
-                      print(f"[Warning] Invalid data format in queue: {result_data}")
-                 # task_done은 if/else와 같은 레벨이어야 함
-                 self.result_queue.task_done() 
-
+                result_data = self.result_queue.get_nowait()
+                if isinstance(result_data, tuple) and len(result_data) == 2:
+                    result_dict, tab_type = result_data
+                    self._update_single_result(result_dict, tab_type)
+                else:
+                    print(f"[Warning] Invalid data format in queue: {result_data}")
+                self.result_queue.task_done()
         except queue.Empty:
-            # 큐가 비어있으면 아무것도 하지 않음
             pass
         except Exception as e:
-             print(f"[Error] Error processing result queue: {e}")
-             traceback.print_exc()
+            print(f"[Error] Error processing result queue: {e}")
+            traceback.print_exc()
         finally:
-            # 100ms 후에 다시 큐 확인 예약
             self.after(100, self._process_result_queue)
 
     def _cancel_operation(self):
@@ -799,6 +875,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self._reset_status_ui()
         self._set_ui_state("normal")
     
+
     def show_centered_message(self, msg_type: str, title: str, message: str):
         """중앙 메시지 표시"""
         from tkinter import messagebox

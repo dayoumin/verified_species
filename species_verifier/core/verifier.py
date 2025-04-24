@@ -482,6 +482,32 @@ def verify_single_microbe_lpsn(microbe_name):
         }
 
 
+# --- COL(통합생물) 검증 로직 ---
+def verify_col_species(col_names_list, result_callback=None):
+    """
+    주어진 통합생물(학명) 리스트를 검증합니다. (COL DB/API 연동은 추후 확장)
+    Args:
+        col_names_list: 학명 문자열 리스트
+        result_callback: 개별 결과 처리 콜백(Optional)
+    Returns:
+        각 학명에 대한 검증 결과 딕셔너리의 리스트
+    """
+    results = []
+    for name in col_names_list:
+        # 실제 COL API 연동 전 임시 결과 생성
+        result = {
+            "학명": name,
+            "검증": "임시결과",
+            "COL 상태": "미구현",
+            "COL ID": "-",
+            "COL URL": "-",
+            "위키백과 요약": get_wiki_summary(name) if 'get_wiki_summary' in globals() else "-"
+        }
+        if result_callback:
+            result_callback(result)
+        results.append(result)
+    return results
+
 # --- 기존 verify_microbe_species 함수 수정 --- (콜백 추가)
 def verify_microbe_species(microbe_names_list: List[str], result_callback: Callable = None): # result_callback 인자 추가
     """주어진 미생물 학명 리스트를 검증합니다. (LPSN 기반)

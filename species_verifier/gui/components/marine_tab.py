@@ -52,13 +52,14 @@ class MarineTabFrame(BaseTabFrame):
         self.file_path_entry = None
         self.verify_button = None
         self.file_browse_button = None
+        self.file_clear_button = None
         
         # 초기값 설정
         self.initial_text = placeholder_text
         
         # BaseTabFrame 초기화 (parent 전달)
         super().__init__(parent, **kwargs) 
-        self.tab_name = "해양생물"
+        self.tab_name = "해양생물(WoRMS)"
         # self.widget은 BaseTabFrame에서 parent로 자동 설정됨
 
     def _create_widgets(self, **kwargs):
@@ -123,6 +124,15 @@ class MarineTabFrame(BaseTabFrame):
         )
         self.file_browse_button.grid(row=0, column=1, padx=(0, 0), pady=2) # 프레임 내부 pady
         
+        self.file_clear_button = ctk.CTkButton(
+            file_input_frame,
+            text="지우기",
+            width=60,
+            font=self.font,
+            command=self._on_file_clear_click
+        )
+        self.file_clear_button.grid(row=0, column=2, padx=(2, 0), pady=2)
+        
         self.file_path_var.trace_add("write", self._update_verify_button_state)
 
         # 5. 통합 검증 버튼 (pady 수정)
@@ -169,6 +179,11 @@ class MarineTabFrame(BaseTabFrame):
         else:
             self.file_path_var.set("")
             self._update_verify_button_state()
+
+    def _on_file_clear_click(self):
+        """파일 지우기 버튼 클릭 이벤트 처리"""
+        self.file_path_var.set("")
+        self._update_verify_button_state()
 
     def _on_verify_click(self):
         """통합 검증 버튼 클릭 이벤트 처리"""
