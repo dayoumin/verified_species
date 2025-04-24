@@ -133,7 +133,7 @@ class SpeciesVerifierApp(ctk.CTk):
             fallback_label.grid(row=0, column=0, padx=10, pady=10)
 
         # --- CTkTabview 생성 (1행으로 이동) ---
-        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view = ctk.CTkTabview(self, command=self._on_tab_change)
         self.tab_view.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="nsew") # pady 상단 추가
 
         # 탭 추가
@@ -216,9 +216,14 @@ class SpeciesVerifierApp(ctk.CTk):
         self.result_tree_microbe.widget.grid(row=2, column=0, sticky="nsew", padx=5, pady=(0, 5))
         
         # --- 상태 바 생성 (2행으로 이동) ---
-        self.status_bar = StatusBar(self, height=30, font=self.default_font)
+        self.status_bar = StatusBar(
+            self,
+            height=30,
+            font=self.default_font,
+            save_command=self.export_results_to_excel # 저장 명령 연결
+        )
         self.status_bar.widget.grid(row=2, column=0, padx=10, pady=(5, 5), sticky="nsew")
-        self.status_bar.set_cancel_command(self._cancel_operation)
+        self.status_bar.set_cancel_command(self._cancel_operation) # 취소 명령 설정
         
         # --- 푸터 생성 (3행으로 이동) ---
         self.footer_frame = ctk.CTkFrame(self, height=20, corner_radius=0)
@@ -587,23 +592,45 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
-        # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
-        results = perform_microbe_verification(
-            microbe_names_list,
-            self.update_progress,
-            self._update_progress_label,
-             # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-            result_callback=lambda r, t: self.result_queue.put((r, t)),
-            context=context # context 전달
-        )
-        
-        # UI 상태 복원 (검증 완료 후)
-        self.after(0, lambda: self._reset_status_ui())
-        self.after(0, lambda: self._set_ui_state("normal"))
-        self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
-        if self.microbe_tab:
-            self.after(0, lambda: self.microbe_tab.focus_entry())
-    
+        try:
+            # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
+            results = perform_microbe_verification(
+                microbe_names_list,
+                self.update_progress,
+                self._update_progress_label,
+                 # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
+                result_callback=lambda r, t: self.result_queue.put((r, t)),
+                context=context # context 전달
+            )
+            # 여기서 results 변수는 사용되지 않지만, 호출은 필요합니다.
+            # 결과 처리는 result_callback을 통해 큐로 전달됩니다.
+        except Exception as e:
+            print(f"[Error _perform_microbe_verification] Error during verification call: {e}")
+            traceback.print_exc()
+            # 오류 발생 시에도 UI 상태는 finally에서 복구
+
+        finally:
+            # 최종 진행률 및 상태 레이블 업데이트
+            self.after(0, lambda: self.update_progress(1.0)) # 진행률 100%
+            self.after(10, lambda: self._update_progress_label("검증 완료"))
+
+            # 프로그레스바 정지 (수정: self.status_bar 사용)
+            if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'progressbar'):
+                self.after(50, lambda: self.status_bar.progressbar.stop())
+                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate')) # 확정 모드로 설정
+
+            # UI 상태를 'normal'로 설정하여 상태바/버튼 정리 (100ms 지연 후)
+            self.after(100, lambda: self._set_ui_state("normal"))
+
+            # --- is_verifying 플래그 리셋 추가 ---
+            self.after(20, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
+
+            # 입력창 초기화 및 포커스 설정 (수정: self.microbe_tab 사용 및 delete 인덱스 수정)
+            if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'entry'):
+                self.after(600, lambda: self.microbe_tab.entry.delete("1.0", tk.END))
+            if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'focus_entry'):
+                 self.after(650, self.microbe_tab.focus_entry) # focus_entry 메서드 호출
+
     def _process_file(self, file_path: str):
         """해양생물 파일 처리"""
         # 브릿지 모듈의 함수 호출
@@ -671,22 +698,51 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _set_ui_state(self, state: str):
         """UI 상태 설정"""
-        # 통합된 검증 버튼과 파일 찾기 버튼의 상태를 설정
-        if self.marine_tab:
-            self.marine_tab.verify_button.configure(state=state)
-            self.marine_tab.file_browse_button.configure(state=state)
-            # verify_button의 활성화 로직은 _update_verify_button_state가 담당하므로
-            # state가 'normal'일 때 추가적인 처리는 제거합니다.
-        
-        if self.microbe_tab:
-            self.microbe_tab.verify_button.configure(state=state)
-            self.microbe_tab.file_browse_button.configure(state=state)
-            # 마찬가지로 state가 'normal'일 때 추가 처리 제거
+        enable_state = tk.NORMAL if state in ["idle", "normal"] else tk.DISABLED
+        is_idle = state in ["idle", "normal"]
 
-        # 참고: 각 탭 내부의 _update_verify_button_state 메서드가
-        # 텍스트 입력이나 파일 선택 여부에 따라 verify_button의 'normal' 상태를 
-        # 세부적으로 관리합니다. 여기서는 전체적인 활성화/비활성화만 제어합니다.
-    
+        # --- UI 요소 상태 일괄 업데이트 ---
+        # 해양생물 탭
+        if hasattr(self, 'marine_tab'):
+            self.marine_tab.set_input_state(enable_state) # 탭 내부 입력 요소 상태 변경
+            if is_idle:
+                 self.marine_tab._update_verify_button_state() # 입력/파일 상태 따라 버튼 업데이트
+
+        # 미생물 탭
+        if hasattr(self, 'microbe_tab'):
+            self.microbe_tab.set_input_state(enable_state) # 탭 내부 입력 요소 상태 변경
+            if is_idle:
+                 self.microbe_tab._update_verify_button_state()
+
+        # 탭 뷰 자체
+        if hasattr(self, 'tab_view'):
+            self.tab_view.configure(state=enable_state)
+
+        # --- 상태 바 업데이트 ---
+        if is_idle:
+            results_exist = self._check_results_exist()
+            print(f"[Debug _set_ui_state(idle)] Active Tab: {self.tab_view.get()}, Results Exist: {results_exist}")
+            # StatusBar의 set_ready 호출 (저장 버튼 표시 여부 전달)
+            if hasattr(self, 'status_bar'): # status_bar 객체 확인
+                self.status_bar.set_ready(show_save_button=results_exist)
+        else: # running/disabled 상태
+            # 진행 표시는 _start_..._thread 함수에서 _show_progress_ui를 통해 처리
+            pass
+
+    # --- 결과 유무 확인 헬퍼 함수 추가 ---
+    def _check_results_exist(self) -> bool:
+         """현재 활성 탭에 결과가 있는지 확인합니다."""
+         if not hasattr(self, 'tab_view'): # tab_view 로드 전 호출 방지
+              return False
+         current_tab_name = self.tab_view.get()
+         if current_tab_name == "해양생물":
+             # 수정: current_results_marine 리스트 직접 확인
+             return hasattr(self, 'current_results_marine') and bool(self.current_results_marine)
+         elif current_tab_name == "미생물 (LPSN)":
+             # 수정: current_results_microbe 리스트 직접 확인
+             return hasattr(self, 'current_results_microbe') and bool(self.current_results_microbe)
+         return False
+
     def _process_result_queue(self):
         """결과 큐를 주기적으로 확인하고 GUI를 업데이트합니다."""
         try:
@@ -1076,6 +1132,26 @@ class SpeciesVerifierApp(ctk.CTk):
                  target_results_list.append(result)
         else:
              print(f"[Error] Cannot update single result: Unknown tab_type '{tab_type}'")
+
+    def _on_tab_change(self):
+        """탭 변경 시 호출되는 콜백 함수"""
+        # 현재 검증 작업 중이면 상태 변경하지 않음
+        if self.is_verifying:
+            print("[Debug Tab Change] Verification in progress, skipping status update.")
+            return
+
+        current_tab_name = self.tab_view.get()
+        print(f"[Debug Tab Change] Tab changed to: {current_tab_name}")
+
+        # 현재 탭의 결과 유무 확인
+        results_exist = self._check_results_exist()
+        print(f"[Debug Tab Change] Results exist in '{current_tab_name}': {results_exist}")
+
+        # 상태 바 업데이트 (현재 탭 상태에 맞게)
+        # '검증 완료' 또는 '입력 대기 중' 메시지와 함께 저장 버튼 상태 업데이트
+        status_text = "검증 완료" if results_exist else "입력 대기 중"
+        if hasattr(self, 'status_bar'):
+            self.status_bar.set_ready(status_text=status_text, show_save_button=results_exist)
 
 
 def run_app():

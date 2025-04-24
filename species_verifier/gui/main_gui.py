@@ -281,214 +281,51 @@ class SpeciesVerifierApp(ctk.CTk):
         # --- "미생물 (LPSN)" 탭 설정 끝 ---
 
         # --- 상태 표시 프레임 (탭 뷰 아래로 이동) ---
-        self.status_frame = ctk.CTkFrame(self, height=50)
-        self.status_frame.grid(row=1, column=0, padx=20, pady=(10, 10), sticky="nsew") # row=1 로 변경
-        self.status_frame.grid_columnconfigure(0, weight=1)
-        self.status_frame.grid_columnconfigure(1, weight=0)
-        self.status_frame.grid_columnconfigure(2, weight=0)
+        self.status_frame = ctk.CTkFrame(self, height=40) # 높이 조정
+        self.status_frame.grid(row=1, column=0, padx=20, pady=(10, 0), sticky="nsew") # pady 아래쪽 제거
+        # 컬럼 설정: 0=상태레이블(고정폭), 1=진행바/저장버튼(확장)
+        self.status_frame.grid_columnconfigure(0, weight=0) # 상태 레이블 고정
+        self.status_frame.grid_columnconfigure(1, weight=1) # 진행/저장 버튼 확장
 
-        # --- 푸터 프레임 (탭 뷰 아래로 이동) ---
+        # --- 푸터 프레임 (상태 표시 프레임 아래) ---
         self.footer_frame = ctk.CTkFrame(self, height=30, corner_radius=0)
-        self.footer_frame.grid(row=2, column=0, padx=0, pady=(5, 0), sticky="nsew") # row=2 로 변경
-        self.footer_frame.grid_columnconfigure(0, weight=1)
-        self.footer_label = ctk.CTkLabel(self.footer_frame,
-                                         text="© 2025 국립수산과학원 수산생명자원 책임기관", # 텍스트 수정
-                                         font=self.footer_font,
-                                         text_color=("gray50", "gray60"))
-        self.footer_label.grid(row=0, column=0, pady=(0, 5))
+        self.footer_frame.grid(row=2, column=0, padx=0, pady=(5, 5), sticky="nsew") # pady 추가
+        self.footer_frame.grid_columnconfigure(0, weight=1) # 중앙 정렬을 위해
 
-        # --- 입력 프레임 위젯 ("해양생물" 탭) ---
-        self.single_entry_label = ctk.CTkLabel(self.input_frame, text="학명/국명 입력:", font=self.default_font)
-        self.single_entry_label.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="w")
-        
-        self.single_entry = ctk.CTkEntry(self.input_frame, placeholder_text="예: Homo sapiens, Gadus morhua", font=self.default_font)
-        self.single_entry.grid(row=0, column=1, padx=10, pady=15, sticky="ew")
-        self.single_entry.bind("<Return>", lambda event: self.start_single_search_thread())
-        self.single_entry.bind("<FocusIn>", self.on_entry_focus_in)
-        self.single_entry.bind("<FocusOut>", self.on_entry_focus_out)
-        self.single_entry.bind("<Key>", self.on_entry_key)
-        self.single_entry.bind("<KeyRelease>", self.on_entry_key)
-        
-        self.single_search_button = ctk.CTkButton(self.input_frame, text="검색", width=90, 
-                                                command=self.start_single_search_thread, 
-                                                font=self.default_bold_font)
-        self.single_search_button.grid(row=0, column=2, padx=(10, 20), pady=15)
-        
-        self.input_help_label_visible = False
-        
-        self.file_button = ctk.CTkButton(self.input_frame, text="파일 선택 (.csv, .xlsx)", command=self.browse_file, font=self.default_bold_font)
-        self.file_button.grid(row=1, column=0, padx=(20, 10), pady=(15, 5), sticky="w")
-        self.file_label = ctk.CTkLabel(self.input_frame, text="선택된 파일 없음", anchor="w", font=self.default_font)
-        self.file_label.grid(row=1, column=1, padx=10, pady=(15, 5), sticky="ew")
-        self.file_search_button = ctk.CTkButton(self.input_frame, text="파일 검증", width=90, command=self.start_file_search_thread, state="disabled", font=self.default_bold_font)
-        self.file_search_button.grid(row=1, column=2, padx=(10, 20), pady=(15, 5), sticky="e")
+        # --- 상태 표시 프레임 위젯 ---
+        # 상태 레이블
+        self.status_label = ctk.CTkLabel(self.status_frame, text="입력 대기 중", anchor="w", font=self.default_font)
+        self.status_label.grid(row=0, column=0, padx=(10, 10), pady=5, sticky="w") # padx 오른쪽 추가
 
-        self.selected_file_path = None
+        # 진행률 표시줄 (숨김 상태)
+        self.progressbar = ctk.CTkProgressBar(self.status_frame)
+        self.progressbar.set(0)
+        # grid는 메서드에서 관리
 
-        self.file_limit_label = ctk.CTkLabel(self.input_frame, 
-                                             # config 값 사용
-                                             text=f"*파일 처리 시 최대 {self.MAX_FILE_PROCESSING_LIMIT}개 학명까지 가능합니다 (처리량이 {self.DIRECT_EXPORT_THRESHOLD}개 초과 시 Excel로 자동 저장).", 
-                                             font=CTkFont(family="Malgun Gothic", size=10), 
-                                             text_color=("gray40", "gray70"))
-        self.file_limit_label.grid(row=2, column=0, columnspan=3, padx=(20, 20), pady=(0, 5), sticky="w")
-        
-        self.mapping_button = ctk.CTkButton(self.input_frame, text="국명-학명 매핑 관리", 
-                                          command=self.open_mapping_manager, 
-                                          font=self.default_bold_font)
-        self.mapping_button.grid(row=3, column=0, columnspan=3, padx=20, pady=(2, 10), sticky="w")
-        # --- 입력 프레임 위젯 ("해양생물" 탭) 끝 ---
+        # 저장 버튼 (숨김 상태)
+        self.save_button = ctk.CTkButton(
+            self.status_frame,
+            text="결과 저장",
+            command=self.export_results_to_excel, # 기존 내보내기 함수 연결
+            state="disabled"
+        )
+        # grid는 메서드에서 관리
 
-        # --- 입력 프레임 위젯 ("미생물" 탭) ---
-        self.microbe_entry_label = ctk.CTkLabel(self.input_frame_microbe, text="미생물 학명 입력:", font=self.default_font)
-        self.microbe_entry_label.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="w")
-        
-        self.microbe_entry = ctk.CTkEntry(self.input_frame_microbe, placeholder_text="예: Escherichia coli", font=self.default_font)
-        self.microbe_entry.grid(row=0, column=1, padx=10, pady=15, sticky="ew")
-        self.microbe_entry.bind("<Return>", lambda event: self.start_microbe_search_thread()) # 새 함수 연결
-        
-        self.microbe_search_button = ctk.CTkButton(self.input_frame_microbe, text="검색", width=90, 
-                                                 command=self.start_microbe_search_thread,
-                                                 font=self.default_bold_font)
-        self.microbe_search_button.grid(row=0, column=2, padx=(10, 20), pady=15)
-        
-        # 파일 관련 위젯 추가 (미생물 탭)
-        self.microbe_file_button = ctk.CTkButton(self.input_frame_microbe, text="파일 선택", width=90, 
-                                               command=self.browse_microbe_file,
-                                               font=self.default_bold_font)
-        self.microbe_file_button.grid(row=1, column=0, padx=(20, 10), pady=(15, 5))
-        
-        self.microbe_file_label = ctk.CTkLabel(self.input_frame_microbe, text="선택된 파일 없음", anchor="w", font=self.default_font)
-        self.microbe_file_label.grid(row=1, column=1, padx=10, pady=(15, 5), sticky="ew")
-        
-        self.microbe_file_search_button = ctk.CTkButton(self.input_frame_microbe, text="파일 검증", width=90, 
-                                                     command=self.start_microbe_file_search_thread,
-                                                     state="disabled", font=self.default_bold_font)
-        self.microbe_file_search_button.grid(row=1, column=2, padx=(10, 20), pady=(15, 5), sticky="e")
-        # --- 입력 프레임 위젯 ("미생물" 탭) 끝 ---
+        # --- 푸터 프레임 위젯 ---
+        # 저작권 레이블 (푸터 프레임 중앙)
+        self.copyright_label = ctk.CTkLabel(self.footer_frame,
+                                            text="© 2025 국립수산과학원 수산생명자원과 책임기관",
+                                            font=self.footer_font,
+                                            text_color=("gray50", "gray60"))
+        self.copyright_label.grid(row=0, column=0, pady=(0, 5)) # 푸터 중앙에 배치
 
-        # --- 결과 프레임 위젯 ---
-        style = ttk.Style()
-        bg_color = self._apply_appearance_mode(ctk.ThemeManager.theme["CTkFrame"]["fg_color"])
-        text_color = self._apply_appearance_mode(ctk.ThemeManager.theme["CTkLabel"]["text_color"])
-        selected_color = self._apply_appearance_mode(ctk.ThemeManager.theme["CTkButton"]["fg_color"])
-        row_height = self.default_font.metrics('linespace') + 8
-        style.configure("Treeview",
-                        background=bg_color,
-                        foreground=text_color,
-                        fieldbackground=bg_color,
-                        borderwidth=0,
-                        rowheight=row_height,
-                        font=self.default_font)
-        style.map('Treeview', background=[('selected', selected_color)], foreground=[('selected', text_color)])
+        # --- 기존 상태 프레임 위젯 제거 ---
+        # 주석 처리 또는 실제 코드에서 해당 라인들(약 488-500) 삭제 필요
+        # self.progress_bar = ...
+        # self.progress_label = ...
+        # self.clear_results_button = ...
+        # self.export_button = ...
 
-        header_bg_color = ("gray85", "gray28")
-        header_fg_color = self._apply_appearance_mode(ctk.ThemeManager.theme["CTkLabel"]["text_color"])
-        header_border_color = ("gray70", "gray40")
-        style.configure("Treeview.Heading",
-                        background=self._apply_appearance_mode(header_bg_color),
-                        foreground=header_fg_color,
-                        relief="flat",
-                        font=(self.header_font.cget("family"), self.header_font.cget("size"), "normal"),
-                        padding=[10, 5],
-                        borderwidth=1,
-                        bordercolor=self._apply_appearance_mode(header_border_color)
-                       )
-        style.map("Treeview.Heading",
-                  background=[('active', self._apply_appearance_mode(ctk.ThemeManager.theme["CTkButton"]["hover_color"]))]
-                  )
-
-        self.tree_style = style
-
-        # --- "해양생물" 탭 결과 Treeview 생성 ---
-        self.result_tree_marine = ttk.Treeview(self.result_frame_marine, 
-                                       columns=("Mapped Name", "Verified", "Status", "WoRMS_ID", "WoRMS Link", "Wiki Summary"), 
-                                              show='tree headings', 
-                                              style="Treeview",
-                                              selectmode='browse')  # 단일 항목 선택 모드
-        self.result_tree_marine.grid(row=0, column=0, padx=(15, 0), pady=(15, 0), sticky="nsew")
-
-        self.result_tree_marine.tag_configure('verified', background='#EEFFEE')
-        self.result_tree_marine.tag_configure('unverified', background='#FFEEEE')
-        self.result_tree_marine.tag_configure('caution', background='#FFEE99')
-
-        self.result_tree_marine.heading("#0", text="입력명")
-        self.result_tree_marine.heading("Mapped Name", text="학명")
-        self.result_tree_marine.heading("Verified", text="검증됨")
-        self.result_tree_marine.heading("Status", text="WoRMS 상태")
-        self.result_tree_marine.heading("WoRMS_ID", text="WoRMS ID(?)")
-        self.result_tree_marine.heading("WoRMS Link", text="WoRMS 링크(?)")
-        self.result_tree_marine.heading("Wiki Summary", text="종정보(?)")
-
-        self.result_tree_marine.column("#0", width=120, anchor=tk.CENTER)
-        self.result_tree_marine.column("Mapped Name", width=120, anchor=tk.W)
-        self.result_tree_marine.column("Verified", width=60, anchor=tk.CENTER)
-        self.result_tree_marine.column("Status", width=100, anchor=tk.CENTER)
-        self.result_tree_marine.column("WoRMS_ID", width=95, anchor=tk.CENTER)
-        self.result_tree_marine.column("WoRMS Link", width=150, anchor=tk.W)
-        self.result_tree_marine.column("Wiki Summary", width=220, anchor=tk.W)
-
-        self.tree_scrollbar_marine_y = ctk.CTkScrollbar(self.result_frame_marine, command=self.result_tree_marine.yview)
-        self.tree_scrollbar_marine_x = ctk.CTkScrollbar(self.result_frame_marine, command=self.result_tree_marine.xview, orientation="horizontal")
-        self.result_tree_marine.configure(yscrollcommand=self.tree_scrollbar_marine_y.set, xscrollcommand=self.tree_scrollbar_marine_x.set)
-        
-        self.result_tree_marine.bind("<Double-1>", lambda event, tree=self.result_tree_marine: self.on_tree_double_click(event, tree))
-        self.result_tree_marine.bind("<Button-3>", lambda event, tree=self.result_tree_marine: self._show_context_menu(event, tree))
-        self.result_tree_marine.bind("<Motion>", lambda event, tree=self.result_tree_marine: self._on_tree_motion(event, tree))
-        self.result_tree_marine.bind("<Leave>", self._on_tree_leave)
-        # --- "해양생물" 탭 결과 Treeview 생성 끝 ---
-
-        # --- "미생물" 탭 결과 Treeview 생성 ---
-        self.result_tree_microbe = ttk.Treeview(self.result_frame_microbe, 
-                                                columns=("Valid Name", "Status", "Taxonomy", "LPSN Link", "Wiki Summary"), # 컬럼 추가
-                                                show='tree headings', 
-                                                style="Treeview",
-                                                selectmode='browse')  # 단일 항목 선택 모드
-        self.result_tree_microbe.grid(row=0, column=0, padx=(15, 0), pady=(15, 0), sticky="nsew")
-
-        self.result_tree_microbe.tag_configure('valid', background='#EEFFEE')
-        self.result_tree_microbe.tag_configure('invalid', background='#FFEEEE')
-        self.result_tree_microbe.tag_configure('ambiguous', background='#FFEE99')
-
-        self.result_tree_microbe.heading("#0", text="입력 학명") # 첫 번째 열
-        self.result_tree_microbe.heading("Valid Name", text="유효 학명")
-        self.result_tree_microbe.heading("Status", text="LPSN 상태") # 예: validly published, synonym
-        self.result_tree_microbe.heading("Taxonomy", text="분류 정보") # 예: Phylum, Class, Order ...
-        self.result_tree_microbe.heading("LPSN Link", text="LPSN 링크")
-        self.result_tree_microbe.heading("Wiki Summary", text="종정보") # 위키 정보 컬럼 헤더 추가
-
-        self.result_tree_microbe.column("#0", width=150, anchor=tk.W)
-        self.result_tree_microbe.column("Valid Name", width=150, anchor=tk.W)
-        self.result_tree_microbe.column("Status", width=100, anchor=tk.CENTER)
-        self.result_tree_microbe.column("Taxonomy", width=200, anchor=tk.W)
-        self.result_tree_microbe.column("LPSN Link", width=150, anchor=tk.W)
-        self.result_tree_microbe.column("Wiki Summary", width=180, anchor=tk.W) # 위키 정보 컬럼 추가
-
-        self.tree_scrollbar_microbe_y = ctk.CTkScrollbar(self.result_frame_microbe, command=self.result_tree_microbe.yview)
-        self.tree_scrollbar_microbe_x = ctk.CTkScrollbar(self.result_frame_microbe, command=self.result_tree_microbe.xview, orientation="horizontal")
-        self.result_tree_microbe.configure(yscrollcommand=self.tree_scrollbar_microbe_y.set, xscrollcommand=self.tree_scrollbar_microbe_x.set)
-
-        # --- 미생물 Treeview 이벤트 바인딩 (필요 시 추가) ---
-        self.result_tree_microbe.bind("<Double-1>", lambda event, tree=self.result_tree_microbe: self.on_tree_double_click(event, tree))
-        self.result_tree_microbe.bind("<Button-3>", lambda event, tree=self.result_tree_microbe: self._show_context_menu(event, tree))
-        self.result_tree_microbe.bind("<Motion>", lambda event, tree=self.result_tree_microbe: self._on_tree_motion(event, tree))
-        self.result_tree_microbe.bind("<Leave>", self._on_tree_leave)
-        # --- "미생물" 탭 결과 Treeview 생성 끝 ---
-
-        # --- 상태 표시 프레임 위젯 (탭 뷰 아래 공통 사용) ---
-        self.progress_bar = ctk.CTkProgressBar(self.status_frame)
-        self.progress_label = ctk.CTkLabel(self.status_frame, text="", anchor="w", font=self.default_font)
-        
-        # 결과 지우기 버튼 추가
-        self.clear_results_button = ctk.CTkButton(self.status_frame, text="결과 지우기", 
-                                                command=lambda: self._clear_results_tree(None), 
-                                                state="disabled", font=self.default_bold_font)
-        self.clear_results_button.grid(row=0, column=1, padx=(10, 10), pady=15, sticky="e")
-        
-        # 엑셀 내보내기 버튼 위치 변경
-        self.export_button = ctk.CTkButton(self.status_frame, text="결과 저장 (Excel)", 
-                                         command=self.export_results_to_excel, 
-                                         state="disabled", font=self.default_bold_font)
-        self.export_button.grid(row=0, column=2, padx=(0, 20), pady=15, sticky="e")
         # --- 상태 표시 프레임 위젯 끝 ---
 
         self._reset_status_ui() # 초기 상태 설정
@@ -517,35 +354,57 @@ class SpeciesVerifierApp(ctk.CTk):
         self._update_scrollbars() if hasattr(self, '_update_scrollbars') else None
 
 
-    def _reset_status_ui(self, reset_file_label=False):
-        """Resets the status UI elements, hiding progress and scrollbars."""
-        # 진행률 표시 숨기기
-        self.progress_bar.grid_forget()
-        self.progress_label.grid_forget()
-        self.progress_label.configure(text="") # 레이블 텍스트 초기화
-        self.progress_bar.set(0)
-        self.progress_bar.stop()
+    def _reset_status_ui(self, reset_file_label=False, show_save_button=False): # 파라미터 추가
+        """상태 표시줄 UI를 초기 상태 또는 완료 상태로 재설정합니다."""
+        # --- 기존 코드 대신 새 로직 적용 ---
+        self.status_label.grid_remove() # 일단 숨김
+        self.progressbar.grid_remove() # 진행률 표시줄 숨김
+        self.save_button.grid_remove() # 저장 버튼 숨김
 
-        # 파일 레이블 초기화 (옵션, 해양생물 탭 관련)
-        if reset_file_label and hasattr(self, 'file_label'):
-            self.selected_file_path = None
-            self.file_label.configure(text="선택된 파일 없음")
-            self.file_search_button.configure(state="disabled")
+        if show_save_button:
+            # 완료 상태: 저장 버튼 표시 및 상태 레이블 변경
+            self.status_label.configure(text="검증 완료")
+            self.status_label.grid(row=0, column=0, padx=(10, 10), pady=5, sticky="w") # 상태 레이블 표시
+            self.save_button.grid(row=0, column=1, padx=(10, 10), pady=5, sticky="ew") # 저장 버튼 표시 (가운데 확장)
+            self.save_button.configure(state="normal") # 저장 버튼 활성화
+        else:
+            # 초기 또는 결과 없는 완료 상태: '입력 대기 중' 레이블 표시
+            self.status_label.configure(text="입력 대기 중")
+            self.status_label.grid(row=0, column=0, padx=(10, 10), pady=5, sticky="w") # 상태 레이블 표시
+            self.save_button.configure(state="disabled") # 저장 버튼 비활성화 확실히
 
-        # 결과 없으면 내보내기 버튼 비활성화 (활성 탭 기준)
-        self._update_export_button_state()
+        # 파일 레이블 초기화 (옵션)
+        if reset_file_label:
+            if hasattr(self, 'file_label'):
+                self.selected_file_path = None
+                self.file_label.configure(text="선택된 파일 없음")
+                if hasattr(self, 'file_search_button'): self.file_search_button.configure(state="disabled")
+            # microbe_file_label도 초기화
+            if hasattr(self, 'microbe_file_label'):
+                self.selected_microbe_file_path = None
+                self.microbe_file_label.configure(text="선택된 파일 없음")
+                if hasattr(self, 'microbe_file_search_button'): self.microbe_file_search_button.configure(state="disabled")
 
-        # 모든 스크롤바 숨기기
-        self.tree_scrollbar_marine_y.grid_forget()
-        self.tree_scrollbar_marine_x.grid_forget()
-        self.tree_scrollbar_microbe_y.grid_forget()
-        self.tree_scrollbar_microbe_x.grid_forget()
+        # 스크롤바 숨기는 로직은 유지하거나 필요시 추가
+        if hasattr(self, 'tree_scrollbar_marine_y'): self.tree_scrollbar_marine_y.grid_forget()
+        if hasattr(self, 'tree_scrollbar_marine_x'): self.tree_scrollbar_marine_x.grid_forget()
+        if hasattr(self, 'tree_scrollbar_microbe_y'): self.tree_scrollbar_microbe_y.grid_forget()
+        if hasattr(self, 'tree_scrollbar_microbe_x'): self.tree_scrollbar_microbe_x.grid_forget()
+
+        # 내보내기/지우기 버튼 상태 업데이트 로직 제거 (_set_ui_state에서 처리)
+        # if hasattr(self, 'export_button'): self.export_button.configure(state="disabled")
+        # if hasattr(self, 'clear_results_button'): self.clear_results_button.configure(state="disabled")
 
     def _show_progress_ui(self, initial_text=""):
-        """Shows the progress bar and label."""
-        self.progress_bar.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="ew")
-        self.progress_label.grid(row=0, column=0, padx=25, pady=15, sticky="w")
-        self.progress_label.configure(text=initial_text)
+        """진행률 표시줄과 상태 레이블을 표시합니다."""
+        # --- 기존 코드 대신 새 로직 적용 ---
+        self.status_label.grid() # 상태 레이블 표시
+        self.status_label.configure(text=initial_text if initial_text else "처리 중...") # 기본 텍스트 변경
+        self.progressbar.grid(row=0, column=1, padx=(10, 10), pady=5, sticky="ew") # 진행률 표시줄 표시 (가운데 확장)
+        self.progressbar.set(0)
+        # self.progressbar.start() # 필요시 호출 측에서 start() 호출
+        self.save_button.grid_remove() # 진행 중에는 저장 버튼 숨김
+        self.save_button.configure(state="disabled") # 비활성화 확실히
 
     def _update_scrollbars(self, event=None):
         """트리뷰 크기에 따라 스크롤바를 업데이트하고 필요에 따라 표시/숨김 처리합니다."""
@@ -595,17 +454,17 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def update_progress(self, progress_value):
         """Updates the progress bar and label. Designed to be called safely via self.after."""
-        self.progress_bar.set(progress_value)
+        self.progressbar.set(progress_value)
         if progress_value >= 1.0:
-            self.progress_label.configure(text="완료") # 100% 도달 시 '완료'로 표시
+            self.status_label.configure(text="완료") # 100% 도달 시 '완료'로 표시
         else:
             # 활성 탭에 따라 메시지 조정 가능
             verb = "검증 중" if self.active_tab == "해양생물" else "검색 중"
-            self.progress_label.configure(text=f"{verb}... {progress_value*100:.0f}%") # 진행률 표시
+            self.status_label.configure(text=f"{verb}... {progress_value*100:.0f}%") # 진행률 표시
 
     def _update_progress_label(self, text):
         """진행 레이블 텍스트를 업데이트합니다."""
-        self.progress_label.configure(text=text)
+        self.status_label.configure(text=text)
 
     def browse_file(self):
         """파일 탐색기를 열어 CSV 또는 Excel 파일을 선택합니다. (해양생물 탭 전용)"""
@@ -698,7 +557,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # UI 비활성화
         self._set_ui_state("disabled")
         self._show_progress_ui("미생물 학명 검색 중...")
-        self.progress_bar.start() # 시작 시 불확정 모드
+        self.progressbar.start() # 시작 시 불확정 모드
 
         # 입력값 처리 로직 개선
         microbe_names_list = []
@@ -761,7 +620,7 @@ class SpeciesVerifierApp(ctk.CTk):
             return
         
         self.after(0, self._show_progress_ui, f"{len(korean_names)}개의 국명 처리 중...")
-        self.after(0, self.progress_bar.start)
+        self.after(0, self.progressbar.start)
         self.after(0, self._set_ui_state, "disabled")
         
         verification_list_with_status = [] # (국명, 학명 or None) 튜플 저장
@@ -789,7 +648,7 @@ class SpeciesVerifierApp(ctk.CTk):
             thread.start()
         else: # 처리할 국명이 아예 없는 경우 (매우 드문 케이스)
             print("[Warning] No valid Korean names found to process.")
-            self.after(0, self.progress_bar.stop) # 진행 멈춤
+            self.after(0, self.progressbar.stop) # 진행 멈춤
             self.after(0, self._reset_status_ui) # 상태 초기화
             self.after(0, lambda: self.show_centered_message("warning", "처리 불가", "처리할 국명이 없습니다."))
             self.after(0, self._set_ui_state, "normal") # UI 활성화
@@ -847,8 +706,8 @@ class SpeciesVerifierApp(ctk.CTk):
             total_items = len(verification_list_input)
             self.after(0, self._show_progress_ui) # 진행률 UI 표시 (텍스트는 아래에서 설정)
             self.after(0, lambda: self._update_progress_label(f"총 {total_items}개 항목 처리 중..."))
-            self.after(0, lambda: self.progress_bar.set(0)) # 진행률 초기화
-            self.after(0, lambda: self.progress_bar.configure(mode='determinate')) # 확정 모드
+            self.after(0, lambda: self.progressbar.set(0)) # 진행률 초기화
+            self.after(0, lambda: self.progressbar.configure(mode='determinate')) # 확정 모드
 
             # --- 처리 로직 분기 ---
             if is_korean_search:
@@ -973,9 +832,9 @@ class SpeciesVerifierApp(ctk.CTk):
         finally:
             # UI 상태 복원 및 진행 표시 완료
             self.after(0, lambda: self._set_ui_state("normal"))
-            self.after(50, lambda: self.progress_bar.stop())
-            self.after(50, lambda: self.progress_bar.configure(mode='determinate')) # Stop 이후 확정 모드로 복원
-            self.after(50, lambda: self.progress_bar.set(1.0))
+            self.after(50, lambda: self.progressbar.stop())
+            self.after(50, lambda: self.progressbar.configure(mode='determinate')) # Stop 이후 확정 모드로 복원
+            self.after(50, lambda: self.progressbar.set(1.0))
             
             status_label_text = "오류 발생" if error_occurred else "완료"
             print(f"[Debug] 진행 상태 업데이트: '{status_label_text}'") # 디버깅 로그 추가
@@ -1411,8 +1270,8 @@ class SpeciesVerifierApp(ctk.CTk):
             
             # 진행 상태 UI 업데이트
             self.after(0, lambda: self._update_progress_label(f"미생물 학명 검증 중 (0/{total_items})"))
-            self.after(0, lambda: self.progress_bar.configure(mode='determinate'))
-            self.after(0, lambda: self.progress_bar.set(0))
+            self.after(0, lambda: self.progressbar.configure(mode='determinate'))
+            self.after(0, lambda: self.progressbar.set(0))
             
             # 각 미생물 학명 검증
             for i, microbe_name in enumerate(microbe_names_list):
@@ -1549,8 +1408,8 @@ class SpeciesVerifierApp(ctk.CTk):
         except Exception as e:
             print(f"[Error] 미생물 검증 프로세스 중 오류 발생: {e}")
             self.after(0, lambda: self._update_progress_label(f"오류 발생: {str(e)}"))
-            self.after(50, lambda: self.progress_bar.configure(mode='determinate'))
-            self.after(50, lambda: self.progress_bar.stop())
+            self.after(50, lambda: self.progressbar.configure(mode='determinate'))
+            self.after(50, lambda: self.progressbar.stop())
             self.after(500, lambda: self._reset_status_ui())
             self.after(500, lambda: self._set_ui_state("normal"))
             self.after(0, lambda: self.show_centered_message("error", "검증 오류", f"미생물 검증 중 오류가 발생했습니다: {str(e)}"))
@@ -1646,11 +1505,9 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 내보내기 버튼 상태 업데이트
         if results_ref and len(results_ref) > 0:
-            self.export_button.configure(state="normal")
-            self.clear_results_button.configure(state="normal")  # 결과 지우기 버튼도 활성화
+            self.save_button.configure(state="normal")
         else:
-            self.export_button.configure(state="disabled")
-            self.clear_results_button.configure(state="disabled")  # 결과 지우기 버튼도 비활성화
+            self.save_button.configure(state="disabled")  # 결과 지우기 버튼도 비활성화
 
     # --- 헬퍼 함수: Treeview 비우기 ---
     def _clear_results_tree(self, tab_name=None):
@@ -1846,37 +1703,63 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- UI 상태 변경 ---
     def _set_ui_state(self, state):
         """UI 위젯의 상태를 일괄적으로 변경합니다."""
-        # 버튼 상태 변경
-        self.single_search_button.configure(state=state)
-        self.file_button.configure(state=state)
-        
-        # 파일 선택된 경우만 파일 검색 버튼 활성화
-        if state == "normal" and self.selected_file_path:
-            self.file_search_button.configure(state=state)
+        # --- 기존 로직에서 상태바 관련 부분 수정 ---
+        if state == "running" or state == "disabled": # "disabled" 상태도 동일하게 처리
+            # --- 실행 중 상태 ---
+            # 모든 입력/작업 버튼 비활성화
+            if hasattr(self, 'single_search_button'): self.single_search_button.configure(state="disabled")
+            if hasattr(self, 'file_button'): self.file_button.configure(state="disabled")
+            if hasattr(self, 'file_search_button'): self.file_search_button.configure(state="disabled") # 파일 선택 여부 상관없이 비활성화
+            if hasattr(self, 'single_entry'): self.single_entry.configure(state="disabled")
+            if hasattr(self, 'tab_view'): self.tab_view.configure(state="disabled")
+            if hasattr(self, 'microbe_search_button'): self.microbe_search_button.configure(state="disabled")
+            if hasattr(self, 'microbe_file_button'): self.microbe_file_button.configure(state="disabled")
+            if hasattr(self, 'microbe_file_search_button'): self.microbe_file_search_button.configure(state="disabled")
+            if hasattr(self, 'microbe_entry'): self.microbe_entry.configure(state="disabled")
+            if hasattr(self, 'mapping_button'): self.mapping_button.configure(state="disabled")
+
+            # 상태바 UI 업데이트 호출
+            self._show_progress_ui() # 진행률 표시줄 표시
+
+        elif state == "idle" or state == "normal": # "normal" 상태도 동일하게 처리
+            # --- 대기 상태 ---
+            # 모든 입력/작업 버튼 활성화 (파일 검색 버튼은 조건부)
+            if hasattr(self, 'single_search_button'): self.single_search_button.configure(state="normal")
+            if hasattr(self, 'file_button'): self.file_button.configure(state="normal")
+            # 파일 선택 여부에 따라 파일 검색 버튼 상태 결정
+            file_selected = hasattr(self, 'selected_file_path') and self.selected_file_path
+            if hasattr(self, 'file_search_button'): self.file_search_button.configure(state="normal" if file_selected else "disabled")
+            if hasattr(self, 'single_entry'): self.single_entry.configure(state="normal")
+            if hasattr(self, 'tab_view'): self.tab_view.configure(state="normal")
+            if hasattr(self, 'microbe_search_button'): self.microbe_search_button.configure(state="normal")
+            if hasattr(self, 'microbe_file_button'): self.microbe_file_button.configure(state="normal")
+            # 미생물 파일 선택 여부에 따라 파일 검색 버튼 상태 결정
+            microbe_file_selected = hasattr(self, 'selected_microbe_file_path') and self.selected_microbe_file_path
+            if hasattr(self, 'microbe_file_search_button'): self.microbe_file_search_button.configure(state="normal" if microbe_file_selected else "disabled")
+            if hasattr(self, 'microbe_entry'): self.microbe_entry.configure(state="normal")
+            if hasattr(self, 'mapping_button'): self.mapping_button.configure(state="normal")
+
+            # --- 수정: 완료 시 저장 버튼 표시 로직 ---
+            results_exist = False
+            current_tab = "None" # 디버깅용
+            results_len = 0 # 디버깅용
+            if hasattr(self, 'active_tab'): # active_tab이 초기화된 후에만 확인
+                current_tab = self.active_tab
+                if self.active_tab == "해양생물" and hasattr(self, 'current_results_marine') and self.current_results_marine:
+                    results_exist = True
+                    results_len = len(self.current_results_marine)
+                elif self.active_tab == "미생물 (LPSN)" and hasattr(self, 'current_results_microbe') and self.current_results_microbe:
+                    results_exist = True
+                    results_len = len(self.current_results_microbe)
+
+            # 디버깅 로그 추가
+            print(f"[Debug _set_ui_state(idle)] Active Tab: {current_tab}, Results Exist: {results_exist}, Results Length: {results_len}")
+
+            # 결과가 있을 때만 저장 버튼 표시하도록 상태 초기화 호출
+            self._reset_status_ui(show_save_button=results_exist)
+
         else:
-            self.file_search_button.configure(state="disabled")
-            
-        # 탭 뷰의 상태 변경
-        if hasattr(self, 'tab_view'):
-            if state == "disabled":
-                self.tab_view.configure(state=state)
-            else:
-                self.tab_view.configure(state="normal")
-                
-        # 미생물 탭 버튼 상태 변경
-        if hasattr(self, 'microbe_search_button'):
-            self.microbe_search_button.configure(state=state)
-            
-        # 미생물 탭 파일 버튼 상태 변경
-        if hasattr(self, 'microbe_file_button'):
-            self.microbe_file_button.configure(state=state)
-            
-        # 미생물 파일 선택된 경우만 파일 검색 버튼 활성화
-        if hasattr(self, 'microbe_file_search_button'):
-            if state == "normal" and hasattr(self, 'selected_microbe_file_path') and self.selected_microbe_file_path:
-                self.microbe_file_search_button.configure(state=state)
-            else:
-                self.microbe_file_search_button.configure(state="disabled")
+            print(f"[Warning] Unknown UI state: {state}")
 
     # --- 국명-학명 매핑 관리 기능 ---
     def open_mapping_manager(self):
@@ -1967,7 +1850,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # UI 비활성화
         self._set_ui_state("disabled")
         self._show_progress_ui("파일에서 미생물 학명 로드 중...")
-        self.progress_bar.start() # 시작 시 불확정 모드
+        self.progressbar.start() # 시작 시 불확정 모드
         
         # 파일 처리 및 검증 스레드 시작
         thread = threading.Thread(target=self._process_microbe_file, args=(self.selected_microbe_file_path,), daemon=True)
@@ -2350,7 +2233,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # UI 비활성화
         self._set_ui_state("disabled")
         self._show_progress_ui("파일에서 학명 로드 중...")
-        self.progress_bar.start() # 시작 시 불확정 모드
+        self.progressbar.start() # 시작 시 불확정 모드
         
         # 파일 처리 및 검증 스레드 시작
         thread = threading.Thread(target=self._process_file, args=(self.selected_file_path,), daemon=True)

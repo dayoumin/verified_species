@@ -197,6 +197,30 @@ class MarineTabFrame(BaseTabFrame):
         else:
             self.verify_button.configure(state="disabled")
 
+    def set_input_state(self, state: str):
+        """탭 내 입력 관련 위젯들의 상태를 설정합니다."""
+        # state는 tk.NORMAL 또는 tk.DISABLED 여야 합니다.
+        # CTkTextbox 상태 변경 (CTkEntry와 동일하게 state 사용)
+        if self.entry:
+            self.entry.configure(state=state)
+
+        # 파일 경로 엔트리 (읽기 전용이지만 시각적/기능적 상태 변경 가능)
+        # if self.file_path_entry:
+        #     self.file_path_entry.configure(state=state) # 읽기 전용이므로 상태 변경 불필요할 수 있음
+
+        # 파일 찾기 버튼
+        if self.file_browse_button:
+            self.file_browse_button.configure(state=state)
+
+        # 검증 버튼 (전체적인 활성화/비활성화 제어)
+        # 세부적인 활성화는 _update_verify_button_state에서 관리
+        if self.verify_button:
+            if state == tk.DISABLED:
+                self.verify_button.configure(state=tk.DISABLED)
+            else:
+                # normal 상태일 때는 _update_verify_button_state가 실제 상태 결정
+                self._update_verify_button_state()
+
     def focus_entry(self):
         """입력 필드에 포커스 설정"""
         if self.entry:
