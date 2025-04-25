@@ -21,6 +21,7 @@ class ColTabFrame(BaseTabFrame):
         bold_font: Any,
         placeholder_text: str = "통합생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
         max_file_processing_limit: int = 1000,
+        max_direct_input_limit: int = 20,  # 직접 입력 한계 추가
         direct_export_threshold: int = 100,
         **kwargs
     ):
@@ -29,6 +30,7 @@ class ColTabFrame(BaseTabFrame):
         self.bold_font = bold_font
         self.placeholder_text = placeholder_text
         self.max_file_processing_limit = max_file_processing_limit
+        self.max_direct_input_limit = max_direct_input_limit  # 직접 입력 한계 저장
         self.direct_export_threshold = direct_export_threshold
         self.entry_var = tk.StringVar()
         self.file_path_var = tk.StringVar()
@@ -44,7 +46,7 @@ class ColTabFrame(BaseTabFrame):
         self.text_count_label = None
         self.file_count_label = None
         super().__init__(parent, **kwargs)
-        self.tab_name = "통합생물(COL)"
+        self.tab_name = "담수 등 전체생물(COL)"
         self._create_widgets()
 
     def set_callbacks(self, **callbacks):
@@ -133,10 +135,10 @@ class ColTabFrame(BaseTabFrame):
         self.file_path_entry = ctk.CTkEntry(file_frame, textvariable=self.file_path_var, font=self.font, state="readonly")
         self.file_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 
-        self.file_browse_button = ctk.CTkButton(file_frame, text="찾기", font=self.font, width=60, command=self._on_file_browse_click)
+        self.file_browse_button = ctk.CTkButton(file_frame, text="찾기", font=self.bold_font, width=60, command=self._on_file_browse_click)
         self.file_browse_button.grid(row=0, column=1, padx=(0, 5))
 
-        self.file_clear_button = ctk.CTkButton(file_frame, text="지우기", font=self.font, width=60, command=self._on_file_clear_click)
+        self.file_clear_button = ctk.CTkButton(file_frame, text="지우기", font=self.bold_font, width=60, command=self._on_file_clear_click)
         self.file_clear_button.grid(row=0, column=2, padx=(0, 0))
 
         self.file_path_var.trace_add("write", self._update_input_count)
@@ -170,13 +172,22 @@ class ColTabFrame(BaseTabFrame):
         text_count_str = f"학명 개수 {self.text_entry_count}개" if self.text_entry_count > 0 else ""
         file_count_str = f"학명 개수 {file_count}개" if file_count > 0 else ""
         
-        if self.text_count_label:
-            self.text_count_label.configure(text=text_count_str)
+        # 직접 입력 개수 제한 확인
+        if self.text_entry_count > self.max_direct_input_limit:
+            text_count_str = f"학명 개수 {self.text_entry_count}개 (최대 {self.max_direct_input_limit}개)"
+            if self.text_count_label:
+                self.text_count_label.configure(text=text_count_str, text_color=("red", "red"))
+            is_text_valid = False  # 개수 초과로 입력 무효화
+        else:
+            if self.text_count_label:
+                self.text_count_label.configure(text=text_count_str, text_color=("black", "white"))
+            is_text_valid = self.text_entry_count > 0
+        
+        # 파일 개수 표시 업데이트
         if self.file_count_label:
             self.file_count_label.configure(text=file_count_str)
              
         # 5. 검증 버튼 상태 업데이트
-        is_text_valid = self.text_entry_count > 0
         is_file_valid = file_count > 0
         if is_text_valid or is_file_valid:
             self.verify_button.configure(state="normal")
@@ -232,7 +243,7 @@ class ColTabFrame(BaseTabFrame):
 
     def _on_file_browse_click(self):
         file_path = filedialog.askopenfilename(
-            title="통합생물 목록 파일 선택",
+            title="담수 등 전체생물 목록 파일 선택",
             filetypes=[
                 ("Excel 파일", "*.xlsx"),
                 ("CSV 파일", "*.csv"),

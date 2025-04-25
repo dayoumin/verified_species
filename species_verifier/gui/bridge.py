@@ -6,6 +6,10 @@
 """
 import threading
 from typing import Callable, List, Dict, Any, Union, Tuple, Optional
+import sys  # 추가
+import os   # 추가
+import pandas as pd # 추가 (process_file 내부 import 제거 가능)
+from pathlib import Path # 추가
 
 # 기존 main_gui.py의 함수를 직접 임포트하기 위한 try-except
 try:
@@ -15,7 +19,7 @@ try:
         _process_file as original_process_file,
         _process_microbe_file as original_process_microbe_file,
         _get_wiki_summary as original_get_wiki_summary,
-        KOREAN_NAME_MAPPINGS
+        # KOREAN_NAME_MAPPINGS # 기존 JSON 매핑 임포트 제거
     )
     
     # 임포트 성공 로그
@@ -43,9 +47,54 @@ except ImportError as e:
     def original_get_wiki_summary(*args, **kwargs):
         print("[Warning] Using dummy get_wiki_summary function")
         return "정보 없음 (더미 함수)"
-    
-    KOREAN_NAME_MAPPINGS = {}
 
+# --- 국명-학명 매핑 로딩 로직 (Excel 파일 기반) ---
+
+def get_base_path():
+    """ 실행 파일의 기본 경로를 반환합니다 (개발 환경과 .exe 환경 모두 지원). """
+    if getattr(sys, 'frozen', False):
+        # .exe로 실행될 때
+        return Path(sys.executable).parent
+    else:
+        # 스크립트로 실행될 때 (.py)
+        # bridge.py는 gui 폴더 안에 있으므로, 프로젝트 루트는 두 단계 위입니다.
+        return Path(__file__).resolve().parent.parent.parent
+
+def load_korean_mappings_from_excel() -> Dict[str, str]:
+    """ 실행 파일 옆의 data 폴더에 있는 Excel 파일에서 매핑을 로드합니다. """
+    base_path = get_base_path()
+    # 'data' 하위 폴더에 있다고 가정
+    excel_path = base_path / "data" / "korean_mappings.xlsx"
+    print(f"[Info Bridge] Attempting to load Korean mappings from: {excel_path}")
+
+    mappings = {}
+    if excel_path.exists():
+        try:
+            df = pd.read_excel(excel_path, header=0) # 첫 번째 행을 헤더로 사용
+            # '국명', '학명' 컬럼이 있는지 확인 (대소문자, 공백 무시)
+            df.columns = [str(col).strip().lower() for col in df.columns] # 컬럼명을 문자열로 변환 후 처리
+            required_cols = ['국명', '학명']
+            if all(col in df.columns for col in required_cols):
+                # NaN 값 제거 후 딕셔너리 생성 (국명과 학명 모두 문자열로 변환)
+                df_cleaned = df[required_cols].dropna()
+                df_cleaned['국명'] = df_cleaned['국명'].astype(str)
+                df_cleaned['학명'] = df_cleaned['학명'].astype(str)
+                # 중복된 국명이 있을 경우 마지막 값 사용 (기본 동작)
+                mappings = pd.Series(df_cleaned.학명.values, index=df_cleaned.국명).to_dict()
+                print(f"[Info Bridge] Loaded {len(mappings)} Korean mappings from {excel_path}")
+            else:
+                print(f"[Error Bridge] Excel file {excel_path} missing required columns '국명' or '학명'. Found columns: {df.columns.tolist()}")
+
+        except Exception as e:
+            print(f"[Error Bridge] Failed to load or parse Excel mappings from {excel_path}: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        print(f"[Warning Bridge] Mapping file not found at {excel_path}. Korean name lookup will not work.")
+    return mappings
+
+# KOREAN_NAME_MAPPINGS 딕셔너리를 Excel 로딩 함수 호출 결과로 초기화
+KOREAN_NAME_MAPPINGS: Dict[str, str] = load_korean_mappings_from_excel()
 
 # 코어 모듈 임포트 시도 (수정: 클래스 임포트 복원)
 try:
@@ -156,37 +205,112 @@ def process_file(file_path: str) -> List[Any]:
     """
     import os
     import pandas as pd
-    import csv
     
     file_ext = os.path.splitext(file_path)[1].lower()
     scientific_names = []
-    df = None # DataFrame 변수 초기화
+    df = None
     
     try:
-        # 1. 파일 확장자에 따라 읽기 시도 (기본값: header=0)
-        print(f"[Info Bridge] 파일 읽기 시도 (header=0 가정): {file_path}")
+        print(f"[Info Bridge] 파일 '{file_path}' 처리 시작.")
+        
+        # 1. 파일 형식에 따른 초기 로드
         if file_ext == '.csv':
             try:
-                # UTF-8 시도, 실패 시 다른 인코딩(cp949) 시도
                 try:
-                    df = pd.read_csv(file_path, header=0)
+                    # 첫 줄이 헤더인지 판단하기 위해 미리 몇 줄 읽어봄
+                    sample_df = pd.read_csv(file_path, nrows=5)
+                    print(f"[Debug Bridge] 파일 첫 5줄 샘플: {sample_df.head().to_dict()}")
+                    
+                    # 첫 번째 행이 헤더인지 확인 (학명, scientificname 등의 키워드 포함)
+                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
+                    has_header = False
+                    
+                    if len(sample_df.columns) > 0:
+                        for col in sample_df.columns:
+                            if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                                has_header = True
+                                print(f"[Info Bridge] 헤더 식별됨: '{col}'")
+                                break
+                    
+                    # 헤더 여부에 따라 다르게 로드
+                    if has_header:
+                        print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
+                        df = pd.read_csv(file_path, header=0)
+                    else:
+                        print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
+                        df = pd.read_csv(file_path, header=None)
                 except UnicodeDecodeError:
                     print("[Warning Bridge] UTF-8 디코딩 실패, cp949 시도...")
-                    df = pd.read_csv(file_path, header=0, encoding='cp949')
+                    # 첫 줄이 헤더인지 확인 (cp949 인코딩으로)
+                    sample_df = pd.read_csv(file_path, nrows=5, encoding='cp949')
+                    
+                    # 헤더 확인 로직과 동일
+                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
+                    has_header = False
+                    
+                    if len(sample_df.columns) > 0:
+                        for col in sample_df.columns:
+                            if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                                has_header = True
+                                break
+                    
+                    if has_header:
+                        df = pd.read_csv(file_path, header=0, encoding='cp949')
+                    else:
+                        df = pd.read_csv(file_path, header=None, encoding='cp949')
             except Exception as read_err:
-                print(f"[Error Bridge] CSV 파일 읽기 오류 (header=0): {read_err}")
-                # CSV 읽기 실패 시에도 대체 로직 시도 가능 (예: header=None)
+                print(f"[Error Bridge] CSV 파일 읽기 오류: {read_err}")
+        
         elif file_ext in ['.xlsx', '.xls']:
             try:
-                df = pd.read_excel(file_path, header=0)
+                # 첫 줄이 헤더인지 판단하기 위해 미리 몇 줄 읽어봄
+                sample_df = pd.read_excel(file_path, nrows=5)
+                
+                # 첫 번째 행이 헤더인지 확인
+                header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
+                has_header = False
+                
+                if len(sample_df.columns) > 0:
+                    for col in sample_df.columns:
+                        if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                            has_header = True
+                            print(f"[Info Bridge] 헤더 식별됨: '{col}'")
+                            break
+                
+                # 헤더 여부에 따라 다르게 로드
+                if has_header:
+                    print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
+                    df = pd.read_excel(file_path, header=0)
+                else:
+                    print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
+                    df = pd.read_excel(file_path, header=None)
+            
             except Exception as read_err:
-                 print(f"[Error Bridge] Excel 파일 읽기 오류 (header=0): {read_err}")
+                print(f"[Error Bridge] Excel 파일 읽기 오류: {read_err}")
+        
         elif file_ext == '.txt':
-            # 텍스트 파일은 pandas 대신 직접 처리 유지
+            # 텍스트 파일은 pandas 대신 직접 처리
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
-                scientific_names = [line.strip() for line in lines if line.strip()]
-            print(f"[Info Bridge] TXT 파일 직접 처리 완료.")
+                
+                # 첫 줄이 헤더인지 확인
+                has_header = False
+                if lines and any(keyword in lines[0].lower() for keyword in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']):
+                    has_header = True
+                    print("[Info Bridge] 텍스트 파일에 헤더가 있습니다. 첫 줄을 제외합니다.")
+                    scientific_names = [line.strip() for line in lines[1:] if line.strip()]
+                else:
+                    print("[Info Bridge] 텍스트 파일에 헤더가 없습니다. 모든 줄을 처리합니다.")
+                    scientific_names = [line.strip() for line in lines if line.strip()]
+                
+                print(f"[Info Bridge] TXT 파일 직접 처리 완료. 추출된 학명 수: {len(scientific_names)}")
+                
+                # 결과 정제 (공통)
+                scientific_names = [name for name in scientific_names if name and isinstance(name, str)]
+                scientific_names = list(dict.fromkeys(scientific_names))  # 중복 제거
+                
+                print(f"[Info Bridge] 최종 추출된 학명 수: {len(scientific_names)}")
+                return scientific_names
         else:
             print(f"[Error Bridge] 지원하지 않는 파일 형식: {file_ext}")
             return []
@@ -194,52 +318,35 @@ def process_file(file_path: str) -> List[Any]:
         # 2. DataFrame 처리 (TXT 파일 제외)
         if df is not None:
             print(f"[Debug Bridge] DataFrame 로드 성공. 컬럼: {df.columns.tolist()}")
-            found_target_col = False
-            # 2-1. 적합한 컬럼 이름 찾기
-            for col in df.columns:
-                if isinstance(col, str) and col.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']:
-                    print(f"[Info Bridge] 대상 컬럼 찾음: '{col}'")
-                    scientific_names = df[col].dropna().astype(str).tolist()
-                    found_target_col = True
-                    break
             
-            # 2-2. 적합한 컬럼 이름이 없을 경우 -> 헤더 없다고 가정하고 다시 읽기
-            if not found_target_col:
-                print("[Warning Bridge] 대상 컬럼 이름 없음. header=None으로 다시 시도...")
-                df_no_header = None
-                try:
-                    if file_ext == '.csv':
-                         try:
-                             df_no_header = pd.read_csv(file_path, header=None)
-                         except UnicodeDecodeError:
-                             df_no_header = pd.read_csv(file_path, header=None, encoding='cp949')
-                    elif file_ext in ['.xlsx', '.xls']:
-                        df_no_header = pd.read_excel(file_path, header=None)
-                    
-                    if df_no_header is not None and not df_no_header.empty:
-                        print("[Info Bridge] header=None 읽기 성공. 첫 번째 컬럼 사용.")
-                        scientific_names = df_no_header.iloc[:, 0].dropna().astype(str).tolist()
-                    else:
-                         print("[Warning Bridge] header=None 읽기 실패 또는 빈 파일. 기존 첫 컬럼 사용 시도.")
-                         # 최후의 수단: 처음에 읽은 df의 첫 컬럼 사용 (데이터 손실 가능성 인지)
-                         if not df.empty:
-                              scientific_names = df.iloc[:, 0].dropna().astype(str).tolist()
-                         else:
-                              print("[Error Bridge] 파일이 비어있거나 읽을 수 없음.")
-                              return []
-                except Exception as read_err_no_header:
-                     print(f"[Error Bridge] 파일 읽기 오류 (header=None): {read_err_no_header}")
-                     # 재시도 실패 시 빈 리스트 반환
-                     return []
+            # DataFrame에서 데이터 추출
+            if df.columns.name is None and not any(isinstance(col, str) and col.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species'] for col in df.columns):
+                # 헤더 없는 경우 (이미 header=None으로 로드됨)
+                print("[Info Bridge] 헤더 없는 파일로 처리. 첫 번째 컬럼 사용.")
+                if not df.empty and len(df.columns) > 0:
+                    scientific_names = df.iloc[:, 0].dropna().astype(str).tolist()
+            else:
+                # 헤더 있는 경우
+                found_target_col = False
+                for col in df.columns:
+                    if isinstance(col, str) and col.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']:
+                        print(f"[Info Bridge] 대상 컬럼 찾음: '{col}'")
+                        scientific_names = df[col].dropna().astype(str).tolist()
+                        found_target_col = True
+                        break
+                
+                # 적합한 컬럼 못 찾으면 첫 번째 컬럼 사용
+                if not found_target_col and not df.empty and len(df.columns) > 0:
+                    print("[Info Bridge] 적합한 헤더 컬럼 없음. 첫 번째 컬럼 사용.")
+                    scientific_names = df.iloc[:, 0].dropna().astype(str).tolist()
         
         # 3. 결과 정제 (공통)
-        # astype(str)을 추가하여 숫자 등이 포함된 경우 문자열로 변환
         scientific_names = [name.strip() for name in scientific_names if name and isinstance(name, str)]
-        scientific_names = [name for name in scientific_names if name] # 혹시 모를 빈 문자열 제거
-        # 중복 제거
-        scientific_names = list(dict.fromkeys(scientific_names))
+        scientific_names = [name for name in scientific_names if name]  # 빈 문자열 제거
+        scientific_names = list(dict.fromkeys(scientific_names))  # 중복 제거
         
-        print(f"[Info Bridge] 최종 추출된 학명 수: {len(scientific_names)}")
+        total_rows = len(scientific_names)
+        print(f"[Info Bridge] 최종 추출된 학명 수: {total_rows}")
         if scientific_names:
             print(f"[Info Bridge] 최종 학명 샘플: {scientific_names[:5]}")
         
@@ -270,62 +377,159 @@ def process_microbe_file(file_path: str) -> List[str]:
     microbe_names = []
     
     try:
+        print(f"[Info Bridge] 미생물 파일 '{file_path}' 처리 시작.")
+        
         # 파일 확장자에 따라 다른 처리
         if file_ext == '.csv':
-            # CSV 파일 처리
             try:
-                # 먼저 pandas로 시도
-                df = pd.read_csv(file_path, encoding='utf-8')
-                # 가장 적합한 열 찾기
-                for col in df.columns:
-                    if col.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']:
-                        microbe_names = df[col].dropna().tolist()
-                        break
+                # 첫 줄이 헤더인지 확인하기 위해 미리 읽어봄
+                sample_df = pd.read_csv(file_path, nrows=5, encoding='utf-8')
                 
-                # 적합한 열이 없으면 첫 번째 열 사용
-                if not microbe_names and len(df.columns) > 0:
-                    microbe_names = df.iloc[:, 0].dropna().tolist()
+                # 첫 번째 행이 헤더인지 확인
+                header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+                has_header = False
                 
-            except Exception as e:
-                print(f"[Warning] Pandas CSV 로드 실패, csv 모듈로 시도: {e}")
-                # pandas 로드 실패 시 csv 모듈 사용
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    reader = csv.reader(f)
-                    headers = next(reader, None)
+                if len(sample_df.columns) > 0:
+                    for col in sample_df.columns:
+                        if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                            has_header = True
+                            print(f"[Info Bridge] 헤더 식별됨: '{col}'")
+                            break
+                
+                # 헤더 여부에 따라 다르게 로드
+                if has_header:
+                    print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
+                    df = pd.read_csv(file_path, header=0, encoding='utf-8')
+                    # 대상 컬럼 찾기
+                    target_col = None
+                    for col in df.columns:
+                        if col.lower() in header_keywords:
+                            target_col = col
+                            break
                     
-                    if headers:
-                        # 적합한 열 인덱스 찾기
-                        target_col = 0
-                        for i, header in enumerate(headers):
-                            if header.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']:
-                                target_col = i
+                    if target_col:
+                        microbe_names = df[target_col].dropna().astype(str).tolist()
+                    elif len(df.columns) > 0:
+                        microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+                else:
+                    print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
+                    df = pd.read_csv(file_path, header=None, encoding='utf-8')
+                    if not df.empty and len(df.columns) > 0:
+                        microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+                
+            except UnicodeDecodeError:
+                print("[Warning Bridge] UTF-8 디코딩 실패, cp949 시도...")
+                try:
+                    # 첫 줄이 헤더인지 확인 (cp949 인코딩으로)
+                    sample_df = pd.read_csv(file_path, nrows=5, encoding='cp949')
+                    
+                    # 헤더 확인 로직
+                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+                    has_header = False
+                    
+                    if len(sample_df.columns) > 0:
+                        for col in sample_df.columns:
+                            if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                                has_header = True
+                                break
+                    
+                    if has_header:
+                        df = pd.read_csv(file_path, header=0, encoding='cp949')
+                        # 대상 컬럼 찾기
+                        target_col = None
+                        for col in df.columns:
+                            if col.lower() in header_keywords:
+                                target_col = col
                                 break
                         
-                        for row in reader:
-                            if len(row) > target_col and row[target_col].strip():
-                                microbe_names.append(row[target_col].strip())
+                        if target_col:
+                            microbe_names = df[target_col].dropna().astype(str).tolist()
+                        elif len(df.columns) > 0:
+                            microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+                    else:
+                        df = pd.read_csv(file_path, header=None, encoding='cp949')
+                        if not df.empty and len(df.columns) > 0:
+                            microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+                except Exception as e:
+                    print(f"[Error Bridge] CP949 로드 실패: {e}")
+            except Exception as read_err:
+                print(f"[Warning Bridge] Pandas CSV 로드 실패: {read_err}")
         
         elif file_ext in ['.xlsx', '.xls']:
-            # Excel 파일 처리
-            df = pd.read_excel(file_path)
-            # 가장 적합한 열 찾기
-            for col in df.columns:
-                if col.lower() in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']:
-                    microbe_names = df[col].dropna().tolist()
-                    break
-            
-            # 적합한 열이 없으면 첫 번째 열 사용
-            if not microbe_names and len(df.columns) > 0:
-                microbe_names = df.iloc[:, 0].dropna().tolist()
+            try:
+                # 첫 줄이 헤더인지 확인하기 위해 미리 읽어봄
+                sample_df = pd.read_excel(file_path, nrows=5)
+                
+                # 첫 번째 행이 헤더인지 확인
+                header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+                has_header = False
+                
+                if len(sample_df.columns) > 0:
+                    for col in sample_df.columns:
+                        if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
+                            has_header = True
+                            print(f"[Info Bridge] 헤더 식별됨: '{col}'")
+                            break
+                
+                # 헤더 여부에 따라 다르게 로드
+                if has_header:
+                    print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
+                    df = pd.read_excel(file_path, header=0)
+                    # 대상 컬럼 찾기
+                    target_col = None
+                    for col in df.columns:
+                        if col.lower() in header_keywords:
+                            target_col = col
+                            break
+                    
+                    if target_col:
+                        microbe_names = df[target_col].dropna().astype(str).tolist()
+                    elif len(df.columns) > 0:
+                        microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+                else:
+                    print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
+                    df = pd.read_excel(file_path, header=None)
+                    if not df.empty and len(df.columns) > 0:
+                        microbe_names = df.iloc[:, 0].dropna().astype(str).tolist()
+            except Exception as read_err:
+                print(f"[Error Bridge] Excel 파일 읽기 오류: {read_err}")
         
         elif file_ext == '.txt':
-            # 텍스트 파일 처리
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-                microbe_names = [line.strip() for line in lines if line.strip()]
+            # 텍스트 파일 직접 처리
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    
+                    # 첫 줄이 헤더인지 확인
+                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+                    has_header = False
+                    if lines and any(keyword in lines[0].lower() for keyword in header_keywords):
+                        has_header = True
+                        print("[Info Bridge] 텍스트 파일에 헤더가 있습니다. 첫 줄을 제외합니다.")
+                        microbe_names = [line.strip() for line in lines[1:] if line.strip()]
+                    else:
+                        print("[Info Bridge] 텍스트 파일에 헤더가 없습니다. 모든 줄을 처리합니다.")
+                        microbe_names = [line.strip() for line in lines if line.strip()]
+            except UnicodeDecodeError:
+                print("[Warning Bridge] UTF-8 디코딩 실패, cp949 시도...")
+                with open(file_path, 'r', encoding='cp949') as f:
+                    lines = f.readlines()
+                    
+                    # 첫 줄이 헤더인지 확인
+                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+                    has_header = False
+                    if lines and any(keyword in lines[0].lower() for keyword in header_keywords):
+                        has_header = True
+                        print("[Info Bridge] 텍스트 파일에 헤더가 있습니다. 첫 줄을 제외합니다.")
+                        microbe_names = [line.strip() for line in lines[1:] if line.strip()]
+                    else:
+                        print("[Info Bridge] 텍스트 파일에 헤더가 없습니다. 모든 줄을 처리합니다.")
+                        microbe_names = [line.strip() for line in lines if line.strip()]
+            except Exception as e:
+                print(f"[Error Bridge] 텍스트 파일 처리 중 오류: {e}")
         
         else:
-            print(f"[Error] 지원하지 않는 파일 형식: {file_ext}")
+            print(f"[Error Bridge] 지원하지 않는 파일 형식: {file_ext}")
             return []
         
         # 결과 정제
@@ -334,15 +538,16 @@ def process_microbe_file(file_path: str) -> List[str]:
         # 중복 제거
         microbe_names = list(dict.fromkeys(microbe_names))
         
-        print(f"[Info] 파일에서 추출한 미생물 학명 수: {len(microbe_names)}")
+        total_rows = len(microbe_names)
+        print(f"[Info Bridge] 최종 추출된 미생물 학명 수: {total_rows}")
         if microbe_names:
-            print(f"[Info] 미생물 학명 샘플: {microbe_names[:5]}")
+            print(f"[Info Bridge] 미생물 학명 샘플: {microbe_names[:5]}")
         
         return microbe_names
         
     except Exception as e:
         import traceback
-        print(f"[Error] 미생물 파일 처리 중 오류 발생: {e}")
+        print(f"[Error Bridge] 미생물 파일 처리 중 오류 발생: {e}")
         print(traceback.format_exc())
         return []
 
