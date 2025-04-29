@@ -10,6 +10,7 @@ import sys  # 추가
 import os   # 추가
 import pandas as pd # 추가 (process_file 내부 import 제거 가능)
 from pathlib import Path # 추가
+import asyncio
 
 # 기존 main_gui.py의 함수를 직접 임포트하기 위한 try-except
 try:
@@ -572,4 +573,33 @@ def get_wiki_summary(search_term: str) -> str:
             return original_get_wiki_summary(search_term)
     else:
         # 코어 모듈이 없는 경우 기존 함수 사용
-        return original_get_wiki_summary(search_term) 
+        return original_get_wiki_summary(search_term)
+
+
+async def process_batch(names: List[str], callback: Callable[[Dict[str, Any]], None]) -> List[Dict[str, Any]]:
+    """
+    학명 목록을 배치로 처리합니다.
+    
+    Args:
+        names: 처리할 학명 목록
+        callback: 결과를 처리할 콜백 함수
+        
+    Returns:
+        처리된 결과 목록
+    """
+    results = []
+    for name in names:
+        try:
+            # 여기에 API 호출 로직이 들어감 (verify_species는 예시)
+            result = await verify_species(name)  # 비동기 검증 함수 호출
+            if callback:
+                callback(result)
+            results.append(result)
+            # API 호출 후 지연 시간 추가
+            await asyncio.sleep(api_config.REQUEST_DELAY)
+        except Exception as e:
+            print(f"[Error] 처리 중 오류 발생: {e}")
+            results.append({"name": name, "error": str(e)})
+            # 오류 발생 시에도 잠시 대기하여 연속 오류 방지
+            await asyncio.sleep(api_config.REQUEST_DELAY)
+    return results 
