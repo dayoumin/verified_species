@@ -29,18 +29,42 @@ class StatusBar(BaseTkComponent):
     
     def _create_widgets(self, **kwargs):
         """위젯 생성"""
+        # 상태바 주 프레임
         self.widget = ctk.CTkFrame(self.parent, height=self.height)
-        self.widget.grid_columnconfigure(0, weight=1)
-        self.widget.grid_columnconfigure(1, weight=0)
-        self.widget.grid_columnconfigure(2, weight=0)
-
-        self.status_label = ctk.CTkLabel(self.widget, text="입력 대기 중", font=self.font, anchor="w")
-        self.status_label.grid(row=0, column=0, padx=(10, 5), pady=5, sticky="ew")
         
-        self.progressbar = ctk.CTkProgressBar(self.widget, width=200)
-        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        # 상태바 레이아웃 설정
+        self.widget.grid_columnconfigure(0, weight=1)  # 상태 메시지 (확장)
+        self.widget.grid_columnconfigure(1, weight=0)  # 진행률 텍스트
+        self.widget.grid_columnconfigure(2, weight=0)  # 진행바
+        self.widget.grid_columnconfigure(3, weight=0)  # 저장 버튼
+        self.widget.grid_columnconfigure(4, weight=0)  # 취소 버튼
+
+        # 상태 메시지 레이블
+        self.status_label = ctk.CTkLabel(
+            self.widget, 
+            text="입력 대기 중", 
+            font=self.font, 
+            anchor="w",
+            width=400  # 고정 너비 설정
+        )
+        self.status_label.grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
+        
+        # 진행률 텍스트 레이블
+        self.progress_text_label = ctk.CTkLabel(
+            self.widget, 
+            text="", 
+            font=self.font, 
+            anchor="e",
+            width=80  # 고정 너비 설정
+        )
+        # 처음에는 숨김 (진행 시에만 표시)
+        
+        # 진행바
+        self.progressbar = ctk.CTkProgressBar(self.widget, width=150)
+        # 처음에는 숨김 (진행 시에만 표시)
         self.progressbar.set(0)
         
+        # 결과 저장 버튼
         self.save_button = ctk.CTkButton(
             self.widget,
             text="결과 저장",
@@ -49,10 +73,17 @@ class StatusBar(BaseTkComponent):
             state="disabled",
             font=self.font
         )
-        self.save_button.grid(row=0, column=1, padx=(5, 10), pady=5, sticky="e")
+        # 처음에는 숨김 (결과가 있을 때만 표시)
         
-        self.cancel_button = ctk.CTkButton(self.widget, text="취소", width=60, state="disabled", font=self.font)
-        self.cancel_button.grid(row=0, column=2, padx=(5, 10), pady=5, sticky="e")
+        # 취소 버튼
+        self.cancel_button = ctk.CTkButton(
+            self.widget, 
+            text="취소", 
+            width=60, 
+            state="disabled", 
+            font=self.font
+        )
+        # 처음에는 숨김 (진행 시에만 표시)
     
     def set_status(self, message: str):
         """
@@ -63,49 +94,104 @@ class StatusBar(BaseTkComponent):
         """
         self.status_label.configure(text=message)
     
-    def set_progress(self, value: float):
+    def set_progress(self, value: float, current_item: int = None, total_items: int = None):
         """
         진행률 설정
         
         Args:
             value: 진행률 (0.0 ~ 1.0)
+            current_item: 현재 처리 중인 항목 번호
+            total_items: 전체 항목 수
         """
+        # 로그 추가
+        print(f"[Debug StatusBar] set_progress 호출: value={value}, current_item={current_item}, total_items={total_items}")
+        
+        # 진행바 설정
         self.progressbar.configure(mode="determinate")
         self.progressbar.set(value)
+        
+        # 진행바가 표시되어 있는지 확인
+        progressbar_visible = self.progressbar.winfo_ismapped()
+        if not progressbar_visible:
+            self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        
+        # 현재 항목과 전체 항목 수가 있는 경우 텍스트 표시
+        if current_item is not None and total_items is not None and total_items > 0:
+            # 진행률 텍스트 업데이트
+            self.progress_text_label.configure(text=f"{current_item}/{total_items}")
+            
+            # 진행률 텍스트가 표시되어 있는지 확인
+            text_visible = self.progress_text_label.winfo_ismapped()
+            if not text_visible:
+                self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        else:
+            # 일반 진행률만 있는 경우 백분율로 표시
+            percentage = int(value * 100)
+            self.progress_text_label.configure(text=f"{percentage}%")
+            
+            # 진행률 텍스트가 표시되어 있는지 확인
+            text_visible = self.progress_text_label.winfo_ismapped()
+            if not text_visible:
+                self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
     
     def set_busy(self, status_text: Optional[str] = None):
         """바쁨 상태로 설정 (진행바, 취소 버튼 표시)"""
+        print(f"[Debug StatusBar] set_busy 호출: status_text={status_text}")
+        
+        # 상태 메시지 설정
         if status_text:
             self.status_label.configure(text=status_text)
         else:
             self.status_label.configure(text="처리 중...")
 
+        # 저장 버튼 숨김
         self.save_button.grid_forget()
+        
+        # 진행률 텍스트 초기화 및 표시
+        self.progress_text_label.configure(text="0%")
+        self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
 
-        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        # 진행바 표시 및 설정
+        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
         self.progressbar.configure(mode="indeterminate")
         self.progressbar.start()
 
+        # 취소 버튼 활성화 및 표시
         self.cancel_button.configure(state="normal")
-        self.cancel_button.grid(row=0, column=2, padx=(5, 10), pady=5, sticky="e")
+        self.cancel_button.grid(row=0, column=4, padx=(5, 10), pady=5, sticky="e")
     
     def set_ready(self, status_text: str = "입력 대기 중", show_save_button: bool = False):
         """준비 상태로 설정 (진행바, 취소 버튼 숨김, 조건부 저장 버튼 표시)"""
+        print(f"[Debug StatusBar] set_ready 호출: status_text={status_text}, show_save_button={show_save_button}")
+        
+        # 상태 메시지 설정
         self.status_label.configure(text=status_text)
 
+        # 진행률 텍스트 초기화 및 숨김
+        self.progress_text_label.configure(text="")
+        self.progress_text_label.grid_forget()
+        
+        # 진행바 숨김
         self.progressbar.grid_forget()
+        
+        # 취소 버튼 숨김
         self.cancel_button.grid_forget()
+        
+        # 저장 버튼 숨김 (초기 상태)
         self.save_button.grid_forget()
 
+        # 진행바 중지 및 초기화
         self.progressbar.stop()
         self.progressbar.configure(mode="determinate")
         self.progressbar.set(0)
 
+        # 취소 버튼 비활성화
         self.cancel_button.configure(state="disabled")
 
+        # 결과가 있는 경우 저장 버튼 표시
         if show_save_button:
             self.save_button.configure(state="normal")
-            self.save_button.grid(row=0, column=1, padx=(5, 10), pady=5, sticky="e")
+            self.save_button.grid(row=0, column=3, padx=(5, 10), pady=5, sticky="e")
         else:
             self.save_button.configure(state="disabled")
     
@@ -116,4 +202,5 @@ class StatusBar(BaseTkComponent):
     
     def set_cancel_command(self, command: Callable):
         """취소 버튼 명령 설정"""
-        self.cancel_button.configure(command=command) 
+        print(f"[Debug StatusBar] set_cancel_command 호출")
+        self.cancel_button.configure(command=command)

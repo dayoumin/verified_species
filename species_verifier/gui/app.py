@@ -412,7 +412,7 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def _perform_col_verification(self, verification_list):
         """COL 글로벌 API를 이용한 검증 (백그라운드)"""
-        from species_verifier.col_api import verify_col_species
+        from species_verifier.core.col_api import verify_col_species
         import time  # time 모듈 임포트
         
         self.is_cancelled = False  # 검증 시작 시 취소 플래그 초기화
@@ -757,23 +757,50 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_verification(self, verification_list_input: Union[List[str], List[Tuple[str, str]]]):
         """해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
-        # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
-        results = perform_verification(
-            verification_list_input, 
-            self.update_progress, 
-            self._update_progress_label,
-            # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-            result_callback=lambda r, t: self.result_queue.put((r, t)) 
-        )
-        
-        # 백그라운드 작업 완료 후 플래그 해제 및 UI 복원
-        # self.after(0, lambda: self._update_results_display(results, "marine")) # 전체 결과 표시는 제거 (개별 처리됨)
-        self.after(0, lambda: self._reset_status_ui())
-        self.after(0, lambda: self._set_ui_state("normal"))
-        self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
-        # 완료 후 포커스 설정은 유지
-        if self.marine_tab:
-            self.after(0, lambda: self.marine_tab.focus_entry())
+        try:
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            
+            # 취소 확인 함수 정의
+            def check_cancelled():
+                return self.is_cancelled
+            
+            # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
+            self.total_verification_items = len(verification_list_input)
+            print(f"[Debug Verification] 전체 항목 수 설정: {self.total_verification_items}")
+            print(f"[Debug Verification] verification_list_input 타입: {type(verification_list_input)}, 길이: {len(verification_list_input)}")
+            if verification_list_input and len(verification_list_input) > 0:
+                print(f"[Debug Verification] 첫 번째 항목: {verification_list_input[0]}")
+                if isinstance(verification_list_input[0], tuple):
+                    print(f"[Debug Verification] 첫 번째 항목은 튜플입니다: {verification_list_input[0][0] if len(verification_list_input[0]) > 0 else '(비어있음)'}")
+                else:
+                    print(f"[Debug Verification] 첫 번째 항목은 튜플이 아닙니다: {verification_list_input[0]}")
+            else:
+                print("[Debug Verification] verification_list_input이 비어 있습니다.")
+            
+            # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
+            results = perform_verification(
+                verification_list_input, 
+                self.update_progress, 
+                self._update_progress_label,
+                # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
+                result_callback=lambda r, t: self.result_queue.put((r, t)) if not self.is_cancelled else None,
+                check_cancelled=check_cancelled # 취소 확인 함수 전달
+            )
+            
+            # 백그라운드 작업 완료 후 플래그 해제 및 UI 복원
+            # self.after(0, lambda: self._update_results_display(results, "marine")) # 전체 결과 표시는 제거 (개별 처리됨)
+        except Exception as e:
+            print(f"[Error _perform_verification] Error during verification call: {e}")
+            traceback.print_exc()
+        finally:
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
+            # 완료 후 포커스 설정은 유지
+            if self.marine_tab:
+                self.after(0, lambda: self.marine_tab.focus_entry())
 
     def _start_microbe_verification_thread(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 스레드 시작"""
@@ -806,14 +833,31 @@ class SpeciesVerifierApp(ctk.CTk):
     def _perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
         try:
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            
+            # 취소 확인 함수 정의
+            def check_cancelled():
+                return self.is_cancelled
+            
+            # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
+            self.total_verification_items = len(microbe_names_list)
+            print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
+            print(f"[Debug Microbe] microbe_names_list 타입: {type(microbe_names_list)}, 길이: {len(microbe_names_list)}")
+            if microbe_names_list and len(microbe_names_list) > 0:
+                print(f"[Debug Microbe] 첫 번째 항목: {microbe_names_list[0]}")
+            else:
+                print("[Debug Microbe] microbe_names_list가 비어 있습니다.")
+            
             # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
             results = perform_microbe_verification(
                 microbe_names_list,
                 self.update_progress,
                 self._update_progress_label,
-                 # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-                result_callback=lambda r, t: self.result_queue.put((r, t)),
-                context=context # context 전달
+                # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
+                result_callback=lambda r, t: self.result_queue.put((r, t)) if not self.is_cancelled else None,
+                context=context, # context 전달
+                check_cancelled=check_cancelled # 취소 확인 함수 전달
             )
             # 여기서 results 변수는 사용되지 않지만, 호출은 필요합니다.
             # 결과 처리는 result_callback을 통해 큐로 전달됩니다.
@@ -909,9 +953,29 @@ class SpeciesVerifierApp(ctk.CTk):
         """진행 상태 레이블 업데이트"""
         self.status_bar.set_status(text)
     
-    def update_progress(self, progress_value: float):
+    def update_progress(self, progress_value: float, current_item: int = None, total_items: int = None):
         """진행 상태 업데이트"""
-        self.status_bar.set_progress(progress_value)
+        # 로그 추가
+        print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
+        print(f"[Debug Progress] 현재 total_verification_items 속성 있는지: {hasattr(self, 'total_verification_items')}")
+        if hasattr(self, 'total_verification_items'):
+            print(f"[Debug Progress] total_verification_items 값: {self.total_verification_items}")
+        
+        # 전체 항목 수가 없는 경우 클래스 변수에서 가져오기
+        if total_items is None and hasattr(self, 'total_verification_items'):
+            total_items = self.total_verification_items
+            print(f"[Debug Progress] 클래스 변수에서 가져온 전체 항목 수: {total_items}")
+            
+        # 현재 항목 번호 계산 (전체 항목 수가 있는 경우)
+        if current_item is None and total_items is not None:
+            current_item = int(progress_value * total_items)
+            if current_item > total_items:  # 범위 검사
+                current_item = total_items
+            print(f"[Debug Progress] 계산된 현재 항목 번호: {current_item}")
+                
+        # 진행률 업데이트 (현재 항목과 전체 항목 수 전달)
+        print(f"[Debug Progress] 최종 전달 값 - 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
+        self.status_bar.set_progress(progress_value, current_item, total_items)
     
     def _show_progress_ui(self, initial_text: str = ""):
         """진행 UI 표시"""
@@ -1004,16 +1068,27 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_cancelled = True  # 취소 플래그 설정
         print("[Debug] 작업 취소 요청됨")
         
-        # UI 상태 초기화
+        # 전체 항목 수 표시 업데이트
+        if hasattr(self, 'total_verification_items'):
+            processed_items = 0  # 취소되어 완료된 항목은 없음
+            # 진행률 0으로 초기화 (현재 항목과 전체 항목 수 전달)
+            self.update_progress(0.0, 0, self.total_verification_items)
+            self._update_progress_label(f"작업이 취소되었습니다.")
+        else:
+            # 전체 항목 수를 알 수 없는 경우
+            self.update_progress(0.0)  # 진행률만 0으로 초기화
+            self._update_progress_label("작업이 취소되었습니다.")
+        
+        # UI 상태 초기화 (진행률 텍스트 초기화 포함)
         self._reset_status_ui()
         self._set_ui_state("normal")
         
-        # 작업 취소 메시지 표시 (상태바)
-        if hasattr(self, 'status_bar'):
-            self.status_bar.set_status("작업이 취소되었습니다.")
-            
         # 검증 중 플래그 해제 - 다른 검증 시작 허용
         self.is_verifying = False
+        
+        # 전체 항목 수 변수 초기화
+        if hasattr(self, 'total_verification_items'):
+            delattr(self, 'total_verification_items')
     
 
     def show_centered_message(self, msg_type: str, title: str, message: str):
@@ -1633,7 +1708,7 @@ class SpeciesVerifierApp(ctk.CTk):
     def _show_help_popup(self):
         """도움말 팝업 창 표시"""
         help_popup = ctk.CTkToplevel(self)
-        help_popup.title("도움말 - 학명 검증기 사용 안내")
+        help_popup.title("💡 도움말 - 학명 검증기 사용 안내") # 이모지 추가
         help_popup.geometry("750x550") # 팝업 크기 조정
         help_popup.grab_set()  # 모달 창으로 설정
 
@@ -1653,39 +1728,23 @@ class SpeciesVerifierApp(ctk.CTk):
         )
         help_textbox.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nsew")
 
-        # 도움말 내용 정의 (이전 내용 기반 요약)
-        help_text = """
-        **국립수산과학원 학명 검증기 사용 안내**
-
-        **1. 기본 사용법:**
-        - **탭 선택:** 검증할 생물 종류(해양생물, 미생물, 담수 등 전체생물)에 맞는 탭을 선택하세요.
-        - **직접 입력:**
-            - 텍스트 상자에 학명 또는 국명을 입력합니다 (쉼표 또는 줄바꿈으로 구분).
-            - 최대 20개까지 입력 가능합니다.
-            - 입력 후 '검증' 버튼 클릭.
-        - **파일 입력:**
-            - CSV, XLSX, TXT 파일 사용 (첫 열에 이름).
-            - '찾기' 버튼으로 파일 선택 (최대 1000개).
-            - '검증' 버튼 클릭.
-
-        **2. 국명 입력:**
-        - 국명(예: 넙치)을 입력하면 앱과 함께 제공된 `data/korean_mappings.xlsx` 파일을 참조하여 학명을 찾고 검증합니다.
-        - 이 Excel 파일을 직접 수정하여 국명 목록을 관리할 수 있습니다.
-
-        **3. 결과 확인 및 활용:**
-        - 결과는 하단 목록에 실시간으로 표시됩니다.
-        - **결과 복사:**
-            - 특정 셀: 셀 오른쪽 클릭 > `'{컬럼명}' 내용 복사` 선택.
-            - 행 전체: 행 오른쪽 클릭 > `선택 행 전체 정보 복사` 선택.
-        - **URL 열기:** URL 셀 더블 클릭.
-        - **위키 요약 보기:** 위키백과 요약 셀 더블 클릭.
-        - **결과 내보내기:** 결과 목록 오른쪽 클릭 > `전체 결과 Excel로 저장` 또는 하단 '저장' 버튼 클릭.
-
-        **4. 오류 및 팁:**
-        - **네트워크 오류:** 특정 항목 검증 실패 시, 해당 셀을 오른쪽 클릭하여 복사 후 잠시 뒤 다시 시도해 보세요.
-        - **입력 제한:** 직접 입력 20개, 파일 입력 1000개 초과 시 나누어 입력하세요.
-        - **파일 배포:** 이 앱 실행 시 `data` 폴더 안의 `korean_mappings.xlsx` 파일이 함께 있어야 국명 조회가 가능합니다.
-        """
+        # --- 도움말 내용 파일에서 읽기 (수정) ---
+        help_text = "도움말 파일을 불러올 수 없습니다."
+        try:
+            # 현재 app.py 파일의 디렉토리를 기준으로 상대 경로 설정
+            current_dir = os.path.dirname(__file__)
+            help_file_path = os.path.join(current_dir, "..", "사용법_팝업.txt")
+            
+            # UTF-8 인코딩으로 파일 읽기
+            with open(help_file_path, 'r', encoding='utf-8') as f:
+                help_text = f.read()
+        except FileNotFoundError:
+            print(f"[Error] Help file not found at: {help_file_path}")
+            help_text = f"오류: 도움말 파일({os.path.basename(help_file_path)})을 찾을 수 없습니다."
+        except Exception as e:
+            print(f"[Error] Failed to read help file: {e}")
+            help_text = "오류: 도움말 파일을 읽는 중 문제가 발생했습니다."
+        # --- 수정 끝 ---
 
         # 텍스트 상자에 도움말 내용 삽입 및 읽기 전용 설정
         help_textbox.insert("1.0", help_text)
