@@ -757,6 +757,7 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_verification(self, verification_list_input: Union[List[str], List[Tuple[str, str]]]):
         """해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
+        print(f"[App LOG] _perform_verification: Starting with {len(verification_list_input)} items.")
         try:
             # 취소 플래그 초기화
             self.is_cancelled = False
@@ -768,6 +769,7 @@ class SpeciesVerifierApp(ctk.CTk):
             # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
             total_items = len(verification_list_input)
             self.total_verification_items = total_items
+            print(f"[App LOG] _perform_verification: self.total_verification_items set to {self.total_verification_items}")
             
             # 진행 상태 디버깅을 위한 로그 추가
             print(f"[Debug Verification] 전체 항목 수 설정: {self.total_verification_items}")
@@ -794,13 +796,18 @@ class SpeciesVerifierApp(ctk.CTk):
                 self.update_progress, 
                 self._update_progress_label,
                 # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-                result_callback=lambda r, t: self.result_queue.put((r, t)) if not self.is_cancelled else None,
+                result_callback=lambda r, t: (
+                    print(f"[App LOG] Queueing marine result for input: {r.get('input_name', 'N/A')} - Queue size: {self.result_queue.qsize()}"),
+                    self.result_queue.put((r, t))
+                ) if not self.is_cancelled else None,
                 check_cancelled=check_cancelled # 취소 확인 함수 전달
             )
             
             # 백그라운드 작업 완료 후 플래그 해제 및 UI 복원
             # self.after(0, lambda: self._update_results_display(results, "marine")) # 전체 결과 표시는 제거 (개별 처리됨)
+            print(f"[App LOG] _perform_verification: try block completed normally for {self.total_verification_items} items.")
         except Exception as e:
+            print(f"[App LOG] _perform_verification: Exception caught: {e}")
             print(f"[Error _perform_verification] Error during verification call: {e}")
             traceback.print_exc()
         finally:
@@ -842,6 +849,7 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
+        print(f"[App LOG] _perform_microbe_verification: Starting with {len(microbe_names_list)} items.")
         try:
             # 취소 플래그 초기화
             self.is_cancelled = False
@@ -852,6 +860,7 @@ class SpeciesVerifierApp(ctk.CTk):
             
             # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
             self.total_verification_items = len(microbe_names_list)
+            print(f"[App LOG] _perform_microbe_verification: self.total_verification_items set to {self.total_verification_items}")
             print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
             print(f"[Debug Microbe] microbe_names_list 타입: {type(microbe_names_list)}, 길이: {len(microbe_names_list)}")
             if microbe_names_list and len(microbe_names_list) > 0:
@@ -865,13 +874,18 @@ class SpeciesVerifierApp(ctk.CTk):
                 self.update_progress,
                 self._update_progress_label,
                 # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-                result_callback=lambda r, t: self.result_queue.put((r, t)) if not self.is_cancelled else None,
+                result_callback=lambda r, t: (
+                    print(f"[App LOG] Queueing microbe result for input: {r.get('input_name', 'N/A')} - Queue size: {self.result_queue.qsize()}"),
+                    self.result_queue.put((r, t))
+                ) if not self.is_cancelled else None,
                 context=context, # context 전달
                 check_cancelled=check_cancelled # 취소 확인 함수 전달
             )
             # 여기서 results 변수는 사용되지 않지만, 호출은 필요합니다.
             # 결과 처리는 result_callback을 통해 큐로 전달됩니다.
+            print(f"[App LOG] _perform_microbe_verification: try block completed normally for {self.total_verification_items} items.")
         except Exception as e:
+            print(f"[App LOG] _perform_microbe_verification: Exception caught: {e}")
             print(f"[Error _perform_microbe_verification] Error during verification call: {e}")
             traceback.print_exc()
             # 오류 발생 시에도 UI 상태는 finally에서 복구
@@ -973,6 +987,7 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def update_progress(self, progress_value: float, current_item: int = None, total_items: int = None):
         """진행 상태 업데이트"""
+        print(f"[App LOG] update_progress called with: progress_value={progress_value}, current_item={current_item}, total_items={total_items}")
         # 로그 추가
         print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
         
@@ -993,6 +1008,7 @@ class SpeciesVerifierApp(ctk.CTk):
                 print(f"[Debug Progress] 전체 항목 수 문제 감지: {actual_total_items} <= 10 및 저장된 값 {stored_total_items} > 10")
                 actual_total_items = stored_total_items  # 저장된 값 사용
         
+        print(f"[App LOG] update_progress: actual_total_items determined as {actual_total_items}")
         print(f"[Debug Progress] 결정된 전체 항목 수: {actual_total_items}")
         
         # 3. 현재 항목 번호 결정
@@ -1085,7 +1101,9 @@ class SpeciesVerifierApp(ctk.CTk):
         try:
             # 최대 10개 항목까지 처리 (한 번의 호출에서)
             for _ in range(10):
+                print(f"[App LOG] _process_result_queue: Attempting to get from queue. Current size: {self.result_queue.qsize()}")
                 result_data = self.result_queue.get_nowait()
+                print(f"[App LOG] _process_result_queue: Dequeued item: {result_data[0].get('input_name', 'N/A')} for tab: {result_data[1]}")
                 if isinstance(result_data, tuple) and len(result_data) == 2:
                     result_dict, tab_type = result_data
                     self._update_single_result(result_dict, tab_type)
@@ -1093,7 +1111,7 @@ class SpeciesVerifierApp(ctk.CTk):
                     print(f"[Warning] Invalid data format in queue: {result_data}")
                 self.result_queue.task_done()
         except queue.Empty:
-            pass
+            print(f"[App LOG] _process_result_queue: Queue is empty.")
         except Exception as e:
             print(f"[Error] Error processing result queue: {e}")
             traceback.print_exc()

@@ -528,6 +528,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
     print(f"[Info Verifier Core] 미생물 검증 시작 (LPSN Scraping): {total_items}개 항목")
 
     for i, microbe_name in enumerate(microbe_names_list):
+        print(f"[MicrobeVerifier LOG] Processing item {i+1}/{total_items}: {microbe_name}")
         if not isinstance(microbe_name, str):
             print(f"[Warning Verifier Core] 리스트 항목이 문자열이 아님 (건너뜀): {type(microbe_name)} - {microbe_name}")
             error_result = {
@@ -548,6 +549,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
             # --- 결과 콜백 호출 위치 변경 --- 
             if result_callback:
                 try:
+                    print(f"[MicrobeVerifier LOG] Calling result_callback for item {microbe_name} with result: {single_result}")
                     result_callback(single_result.copy(), 'microbe') # 결과 복사본 전달
                 except Exception as cb_err:
                     print(f"[Error Verifier Core] Result callback failed for '{microbe_name}': {cb_err}")

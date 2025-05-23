@@ -105,6 +105,7 @@ class MarineSpeciesVerifier:
                 # 한글 국명 입력 처리
                 for i, item in enumerate(verification_list_input):
                     korean_name, scientific_name = item  # 튜플 언패킹
+                    print(f"[MarineVerifier LOG] Korean search: Processing item {i+1}/{total_items}: {item}")
                     
                     # 진행률 표시 - 진행률, 현재 항목, 전체 항목 수 함께 전달
                     self.update_status(f"'{korean_name}' 처리 중...")
@@ -144,13 +145,17 @@ class MarineSpeciesVerifier:
                     
                     # 결과 콜백 호출
                     if self.result_callback:
+                        input_name = result_entry.get('input_name', 'N/A')
+                        print(f"[MarineVerifier LOG] Calling result_callback for item {input_name} with result: {result_entry}")
                         self.result_callback(result_entry.copy(), 'marine')
                     
                     # 진행률 업데이트
                     self.update_progress((i + 1) / total_items)
             
             else:  # 학명 입력 처리
-                for i, scientific_name in enumerate(verification_list_input):
+                for i, scientific_name_item in enumerate(verification_list_input):
+                    scientific_name = str(scientific_name_item) # Ensure it's a string
+                    print(f"[MarineVerifier LOG] Scientific name search: Processing item {i+1}/{total_items}: {scientific_name}")
                     # 현재 처리 중인 학명 표시
                     self.update_status(f"'{scientific_name}' 처리 중...")
                     # 진행률, 현재 항목, 전체 항목 수 함께 전달
@@ -212,6 +217,8 @@ class MarineSpeciesVerifier:
                     
                     # 결과 콜백 호출
                     if self.result_callback:
+                        input_name = result_entry.get('input_name', 'N/A')
+                        print(f"[MarineVerifier LOG] Calling result_callback for item {input_name} with result: {result_entry}")
                         self.result_callback(result_entry.copy(), 'marine')
                     
                     # 진행률 업데이트
