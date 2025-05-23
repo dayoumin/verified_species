@@ -106,33 +106,28 @@ class StatusBar(BaseTkComponent):
         # 로그 추가
         print(f"[Debug StatusBar] set_progress 호출: value={value}, current_item={current_item}, total_items={total_items}")
         
+        # 다른 진행이 있으면 먼저 숨기기
+        self.progressbar.grid_forget()
+        self.progress_text_label.grid_forget()
+        
         # 진행바 설정
         self.progressbar.configure(mode="determinate")
         self.progressbar.set(value)
         
-        # 진행바가 표시되어 있는지 확인
-        progressbar_visible = self.progressbar.winfo_ismapped()
-        if not progressbar_visible:
-            self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        # 진행바 표시
+        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
         
         # 현재 항목과 전체 항목 수가 있는 경우 텍스트 표시
         if current_item is not None and total_items is not None and total_items > 0:
             # 진행률 텍스트 업데이트
             self.progress_text_label.configure(text=f"{current_item}/{total_items}")
-            
-            # 진행률 텍스트가 표시되어 있는지 확인
-            text_visible = self.progress_text_label.winfo_ismapped()
-            if not text_visible:
-                self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
         else:
             # 일반 진행률만 있는 경우 백분율로 표시
             percentage = int(value * 100)
             self.progress_text_label.configure(text=f"{percentage}%")
-            
-            # 진행률 텍스트가 표시되어 있는지 확인
-            text_visible = self.progress_text_label.winfo_ismapped()
-            if not text_visible:
-                self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        
+        # 진행률 텍스트 표시
+        self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
     
     def set_busy(self, status_text: Optional[str] = None):
         """바쁨 상태로 설정 (진행바, 취소 버튼 표시)"""

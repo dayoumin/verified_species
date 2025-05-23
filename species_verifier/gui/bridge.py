@@ -209,7 +209,7 @@ except ImportError as e:
 
 def perform_verification(
     verification_list_input: Union[List[str], List[Tuple[str, str]]],
-    update_progress: Callable[[float], None] = None,
+    update_progress: Callable[[float, Optional[int], Optional[int]], None] = None,
     update_status: Callable[[str], None] = None,
     result_callback: Callable[[Dict[str, Any]], None] = None,
     check_cancelled: Callable[[], bool] = None
@@ -227,6 +227,16 @@ def perform_verification(
     Returns:
         검증 결과 목록 (Fallback 시에만 의미 있음)
     """
+    # 로그 출력 향상: 항목 수 및 첫 번째 항목 정보 출력
+    print(f"[Debug Bridge perform_verification] 전체 항목 수: {len(verification_list_input)}")
+    if verification_list_input and len(verification_list_input) > 0:
+        sample_items = verification_list_input[:min(5, len(verification_list_input))]
+        print(f"[Debug Bridge perform_verification] 샘플 항목: {sample_items}")
+    
+    # API 지연 시간 확인 및 조정
+    from species_verifier.core.worms_api import API_DELAY
+    print(f"[Debug Bridge] 현재 API 지연 시간: {API_DELAY}초")
+    
     # 수정: 클래스 존재 여부 확인
     if HAS_CORE_MODULES and MarineSpeciesVerifier:
         try:
@@ -243,36 +253,65 @@ def perform_verification(
             if verification_list_input and len(verification_list_input) > 0:
                 print(f"[Debug Bridge] 검증할 해양생물 학명 샘플: {verification_list_input[:min(5, len(verification_list_input))]}")
             
-            # 각 항목을 개별적으로 처리하여 모든 항목이 처리되도록 함
-            results = []
-            for i, item in enumerate(verification_list_input):
-                # 취소 여부 확인
-                if check_cancelled and check_cancelled():
-                    print("[Info Bridge] 해양생물 검증 취소 요청 받음 - 반복 중단")
-                    break
+            # 모든 항목을 일괄 처리하도록 수정
+            print(f"[Info Bridge] 전체 {len(verification_list_input)}개 항목 검증을 일괄 처리합니다")
+            
+            # 10개 제한 문제 디버깅: 입력 목록의 전체 길이를 재확인
+            print(f"[Debug Bridge] 검증 직전 확인 - 입력 목록 길이: {len(verification_list_input)}")
+            
+            # API 지연 시간 조정 시도 (필요한 경우)
+            if len(verification_list_input) > 20:
+                print(f"[Debug Bridge] 많은 항목({len(verification_list_input)}개)이 감지되어 API 지연 시간을 0.2초로 조정합니다")
+                import species_verifier.core.worms_api as worms_api
+                worms_api.API_DELAY = 0.2
+            
+            try:
+                # 모든 항목을 한 번에 검증
+                results = verifier.perform_verification(verification_list_input)
+                print(f"[Info Bridge] 검증 완료: 총 {len(results)}개 결과 반환됨")
                 
-                # 진행률 업데이트
+                # 진행률 100%로 설정
                 if update_progress:
-                    progress = (i + 1) / len(verification_list_input)
-                    print(f"[Debug Bridge Progress] 해양생물 진행률 계산: {progress:.2f}, 현재 항목: {i+1}, 전체 항목 수: {len(verification_list_input)}")
-                    # 현재 항목과 전체 항목 수도 함께 전달
-                    update_progress(progress, i+1, len(verification_list_input))
+                    update_progress(1.0, len(verification_list_input), len(verification_list_input))
                 
                 # 상태 메시지 업데이트
                 if update_status:
-                    item_name = item[0] if isinstance(item, tuple) else item
-                    update_status(f"해양생물 검증 중: {item_name} ({i+1}/{len(verification_list_input)}) - 전체 {len(verification_list_input)}개 중 {i+1}번째")
+                    update_status(f"해양생물 검증 완료: 전체 {len(verification_list_input)}개 항목 처리됨")
+                    
+            except Exception as batch_e:
+                print(f"[Error Bridge] 일괄 검증 중 오류 발생: {batch_e}")
                 
-                # 단일 항목 검증 실행
-                try:
-                    # 하나의 항목만 전달하여 검증
-                    single_item = [item]
-                    single_result = verifier.perform_verification(single_item)
-                    if single_result and len(single_result) > 0:
-                        # 결과가 있는 경우 추가
-                        results.extend(single_result)
-                except Exception as item_e:
-                    print(f"[Error Bridge] 항목 '{item}' 검증 중 오류: {item_e}")
+                # 오류 발생 시 원래 방식(개별 처리)으로 폴백
+                print("[Info Bridge] 개별 처리 방식으로 폴백합니다")
+                results = []
+                for i, item in enumerate(verification_list_input):
+                    # 취소 여부 확인
+                    if check_cancelled and check_cancelled():
+                        print("[Info Bridge] 해양생물 검증 취소 요청 받음 - 반복 중단")
+                        break
+                    
+                    # 진행률 업데이트
+                    if update_progress:
+                        progress = (i + 1) / len(verification_list_input)
+                        print(f"[Debug Bridge Progress] 해양생물 진행률 계산: {progress:.2f}, 현재 항목: {i+1}, 전체 항목 수: {len(verification_list_input)}")
+                        # 현재 항목과 전체 항목 수도 함께 전달
+                        update_progress(progress, i+1, len(verification_list_input))
+                    
+                    # 상태 메시지 업데이트
+                    if update_status:
+                        item_name = item[0] if isinstance(item, tuple) else item
+                        update_status(f"해양생물 검증 중: {item_name} ({i+1}/{len(verification_list_input)}) - 전체 {len(verification_list_input)}개 중 {i+1}번째")
+                    
+                    # 단일 항목 검증 실행
+                    try:
+                        # 하나의 항목만 전달하여 검증
+                        single_item = [item]
+                        single_result = verifier.perform_verification(single_item)
+                        if single_result and len(single_result) > 0:
+                            # 결과가 있는 경우 추가
+                            results.extend(single_result)
+                    except Exception as item_e:
+                        print(f"[Error Bridge] 항목 '{item}' 검증 중 오류: {item_e}")
             
             # 결과 확인
             print(f"[Debug Bridge] 검증 결과 수: {len(results) if results else 0}")

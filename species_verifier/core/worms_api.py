@@ -111,9 +111,15 @@ def verify_species_list(species_list: List[Union[str, Tuple[str, str, str]]]) ->
     Returns:
         검증 결과 목록 (각 종별 결과 사전)
     """
+    # 디버그 로그 추가: 전체 처리할 목록 크기 출력
+    print(f"[Debug WoRMS API] 검증 시작: 전체 {len(species_list)}개 항목 처리")
     results = []
     
-    for item in species_list:
+    # 각 항목마다 인덱스와 함께 출력하여 진행 상황 추적
+    for index, item in enumerate(species_list):
+        # 10개 단위로 진행 상황 로그 출력 (많은 항목일 경우 로그가 너무 많아지는 것 방지)
+        if index % 10 == 0 or index == len(species_list) - 1:
+            print(f"[Debug WoRMS API] 항목 처리 중: {index+1}/{len(species_list)}")
         # 입력 형식에 따라 다르게 처리
         if isinstance(item, tuple) and len(item) >= 2:
             # 튜플 형태: (입력명, 학명, [선택적으로 한글명])
@@ -187,4 +193,6 @@ def verify_species_list(species_list: List[Union[str, Tuple[str, str, str]]]) ->
             
         results.append(result)
     
+    # 완료 로그 추가
+    print(f"[Debug WoRMS API] 검증 완료: 총 {len(results)}/{len(species_list)}개 항목 처리됨")
     return results

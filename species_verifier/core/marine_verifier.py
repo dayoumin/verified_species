@@ -28,10 +28,20 @@ class MarineSpeciesVerifier:
         self.status_update_callback = status_update_callback
         self.result_callback = result_callback
     
-    def update_progress(self, progress: float):
-        """진행률 업데이트"""
+    def update_progress(self, progress: float, current_item=None, total_items=None):
+        """진행률 업데이트
+        
+        Args:
+            progress: 진행률 (0.0~1.0 값)
+            current_item: 현재 처리 중인 항목 번호
+            total_items: 전체 항목 수
+        """
         if self.progress_callback:
-            self.progress_callback(progress)
+            # 모든 매개변수를 콜백에 전달
+            if current_item is not None and total_items is not None:
+                self.progress_callback(progress, current_item, total_items)
+            else:
+                self.progress_callback(progress)
     
     def update_status(self, message: str):
         """상태 메시지 업데이트"""
@@ -96,9 +106,9 @@ class MarineSpeciesVerifier:
                 for i, item in enumerate(verification_list_input):
                     korean_name, scientific_name = item  # 튜플 언패킹
                     
-                    # 진행률 표시
-                    self.update_status(f"'{korean_name}' 처리 중... ({i+1}/{total_items})")
-                    self.update_progress((i) / total_items)
+                    # 진행률 표시 - 진행률, 현재 항목, 전체 항목 수 함께 전달
+                    self.update_status(f"'{korean_name}' 처리 중...")
+                    self.update_progress((i) / total_items, i+1, total_items)
                     
                     result_entry = {}  # 각 국명에 대한 결과 딕셔너리
                     
@@ -122,7 +132,9 @@ class MarineSpeciesVerifier:
                         result_entry = self.create_basic_result(korean_name, '-', False, 'N/A')
 
                     # 위키피디아 요약 검색 (국명으로 시도)
-                    self.update_status(f"'{korean_name}' 위키백과 검색 중... ({i+1}/{total_items})")
+                    self.update_status(f"'{korean_name}' 위키백과 검색 중...")
+                    # 진행률, 현재 항목, 전체 항목 수 함께 전달
+                    self.update_progress((i + 0.5) / total_items, i+1, total_items)
                     wiki_summary = get_wiki_summary(korean_name)
                     
                     result_entry['wiki_summary'] = wiki_summary if wiki_summary else '정보 없음'
@@ -140,8 +152,9 @@ class MarineSpeciesVerifier:
             else:  # 학명 입력 처리
                 for i, scientific_name in enumerate(verification_list_input):
                     # 현재 처리 중인 학명 표시
-                    self.update_status(f"'{scientific_name}' 처리 중... ({i+1}/{total_items})")
-                    self.update_progress(i / total_items)
+                    self.update_status(f"'{scientific_name}' 처리 중...")
+                    # 진행률, 현재 항목, 전체 항목 수 함께 전달
+                    self.update_progress(i / total_items, i+1, total_items)
                     
                     print(f"[Info] Performing WoRMS verification for scientific name: '{scientific_name}'")
                     
@@ -168,7 +181,9 @@ class MarineSpeciesVerifier:
                                                  not any(status in current_worms_status for status in error_statuses)
                             
                             if should_search_wiki:
-                                self.update_status(f"'{scientific_name}' 위키백과 검색 중... ({i+1}/{total_items})")
+                                self.update_status(f"'{scientific_name}' 위키백과 검색 중...")
+                                # 진행률, 현재 항목, 전체 항목 수 함께 전달
+                                self.update_progress((i + 0.5) / total_items, i+1, total_items)
                                 name_for_wiki = result_entry.get('scientific_name', scientific_name)  # Use valid name if available
                                 if name_for_wiki == '-': 
                                     name_for_wiki = scientific_name

@@ -766,7 +766,10 @@ class SpeciesVerifierApp(ctk.CTk):
                 return self.is_cancelled
             
             # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
-            self.total_verification_items = len(verification_list_input)
+            total_items = len(verification_list_input)
+            self.total_verification_items = total_items
+            
+            # 진행 상태 디버깅을 위한 로그 추가
             print(f"[Debug Verification] 전체 항목 수 설정: {self.total_verification_items}")
             print(f"[Debug Verification] verification_list_input 타입: {type(verification_list_input)}, 길이: {len(verification_list_input)}")
             if verification_list_input and len(verification_list_input) > 0:
@@ -777,6 +780,13 @@ class SpeciesVerifierApp(ctk.CTk):
                     print(f"[Debug Verification] 첫 번째 항목은 튜플이 아닙니다: {verification_list_input[0]}")
             else:
                 print("[Debug Verification] verification_list_input이 비어 있습니다.")
+            
+            # 전체 항목이 10개 이상인 경우 강제로 UI 업데이트 처리
+            if total_items > 10:
+                print(f"[Debug Verification] 전체 항목({total_items}개)이 10개 이상입니다. UI 진행률을 직접 설정합니다.")
+                # 초기 진행률 상태 설정
+                self.update_progress(0.0, 0, total_items)
+                self._update_progress_label(f"검증 시작: 총 {total_items}개 항목")
             
             # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
             results = perform_verification(
@@ -894,6 +904,14 @@ class SpeciesVerifierApp(ctk.CTk):
         names_list = process_file(file_path)
         
         if names_list:
+            print(f"[Info App] 파일에서 추출된 학명 수: {len(names_list)}")
+            print(f"[Info App] 학명 샘플: {names_list[:min(5, len(names_list))]}")
+            
+            # 전체 목록 처리 확인
+            total_names = len(names_list)
+            if total_names > 10:
+                print(f"[Info App] 주의: 총 {total_names}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
+            
             self._start_verification_thread(names_list)
         else:
             self.after(0, lambda: self.show_centered_message(
@@ -957,29 +975,50 @@ class SpeciesVerifierApp(ctk.CTk):
         """진행 상태 업데이트"""
         # 로그 추가
         print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
-        print(f"[Debug Progress] 현재 total_verification_items 속성 있는지: {hasattr(self, 'total_verification_items')}")
-        if hasattr(self, 'total_verification_items'):
-            print(f"[Debug Progress] total_verification_items 값: {self.total_verification_items}")
         
-        # 전체 항목 수가 없는 경우 클래스 변수에서 가져오기
-        if total_items is None and hasattr(self, 'total_verification_items'):
-            total_items = self.total_verification_items
-            print(f"[Debug Progress] 클래스 변수에서 가져온 전체 항목 수: {total_items}")
-            
-        # 현재 항목 번호 계산 (전체 항목 수가 있는 경우)
-        if current_item is None and total_items is not None:
-            current_item = int(progress_value * total_items)
-            if current_item > total_items:  # 범위 검사
-                current_item = total_items
-            print(f"[Debug Progress] 계산된 현재 항목 번호: {current_item}")
+        # 1. 저장된 전체 항목 수 확인
+        stored_total_items = getattr(self, 'total_verification_items', None)
+        print(f"[Debug Progress] 저장된 전체 항목 수: {stored_total_items}")
+        
+        # 2. 전체 항목 수 결정 (우선순위: 강화된 로직)
+        # 10개 제한 문제 적극 해결: 저장된 전체 항목 수가 10보다 크면 항상 우선 사용
+        if stored_total_items is not None and stored_total_items > 10 and (total_items is None or total_items <= 10):
+            actual_total_items = stored_total_items
+            print(f"[Debug Progress] 10개 제한 우회: 전체 항목 수를 {actual_total_items}개로 강제 설정")
+        else:
+            # 이전 로직: 매개변수로 전달된 값 우선 사용
+            actual_total_items = total_items if total_items is not None else stored_total_items
+            # 10개로 제한되는 문제 추가 확인
+            if actual_total_items is not None and actual_total_items <= 10 and stored_total_items is not None and stored_total_items > 10:
+                print(f"[Debug Progress] 전체 항목 수 문제 감지: {actual_total_items} <= 10 및 저장된 값 {stored_total_items} > 10")
+                actual_total_items = stored_total_items  # 저장된 값 사용
+        
+        print(f"[Debug Progress] 결정된 전체 항목 수: {actual_total_items}")
+        
+        # 3. 현재 항목 번호 결정
+        actual_current_item = current_item
+        if actual_current_item is None and actual_total_items is not None:
+            actual_current_item = max(1, min(int(progress_value * actual_total_items), actual_total_items))
+        print(f"[Debug Progress] 결정된 현재 항목: {actual_current_item}")
                 
-        # 진행률 업데이트 (현재 항목과 전체 항목 수 전달)
-        print(f"[Debug Progress] 최종 전달 값 - 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
-        self.status_bar.set_progress(progress_value, current_item, total_items)
+        # 4. 진행률 업데이트 (전체 항목 수는 파일에서 추출한 전체 항목 수 사용)
+        print(f"[Debug Progress] 진행률 업데이트 - 값: {progress_value}, 항목: {actual_current_item}/{actual_total_items}")
+        self.status_bar.set_progress(progress_value, actual_current_item, actual_total_items)
     
     def _show_progress_ui(self, initial_text: str = ""):
         """진행 UI 표시"""
         self.status_bar.set_busy(initial_text)
+        
+        # 취소 버튼 기능 복원
+        self.is_cancelled = False
+        self.status_bar.set_cancel_command(self._cancel_verification)
+        print("[Debug App] 취소 버튼 활성화 및 기능 설정 완료")
+    
+    def _cancel_verification(self):
+        """검증 취소 처리"""
+        print("[Debug App] 검증 취소 버튼 클릭됨")
+        self.is_cancelled = True  # 취소 플래그 설정
+        self.status_bar.set_status("검증 취소 중...")
     
     def _reset_status_ui(self, reset_file_label: bool = False):
         """상태 UI 초기화"""
