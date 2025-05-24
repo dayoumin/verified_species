@@ -41,8 +41,17 @@ except ImportError as e:
         
         # 각 항목에 대해 처리
         for idx, item in enumerate(verification_list_input):
-            # 취소 여부 확인
-            if check_cancelled and check_cancelled():
+            # 취소 여부 확인 - 디버그 로그 추가
+            cancel_check_result = False
+            try:
+                if check_cancelled:
+                    print(f"[Debug Cancel] 취소 확인 함수 호출: {type(check_cancelled).__name__}")
+                    cancel_check_result = check_cancelled()
+                    print(f"[Debug Cancel] 취소 확인 결과: {cancel_check_result}")
+            except Exception as e:
+                print(f"[Error Cancel] 취소 확인 중 오류: {e}")
+            
+            if cancel_check_result:
                 print("[Info Bridge] Original 함수에서 검증 취소 요청 받음 - 반복 중단")
                 break
                 
@@ -239,12 +248,18 @@ def perform_verification(
     
     # 수정: 클래스 존재 여부 확인
     if HAS_CORE_MODULES and MarineSpeciesVerifier:
+        adapted_msv_callback = None
+        if result_callback:
+            # MarineSpeciesVerifier의 콜백은 인자 두 개(결과 딕셔너리, 탭 타입)를 전달하므로,
+            # 해당 탭 타입을 함께 전달하는 어댑터 생성
+            adapted_msv_callback = lambda r_dict, t="marine": result_callback(r_dict, t)
+
         try:
-            # 수정: Verifier 인스턴스 생성 및 콜백 전달
+            # 수정: Verifier 인스턴스 생성 및 어댑터 콜백 전달
             verifier = MarineSpeciesVerifier(
                 progress_callback=update_progress, 
                 status_update_callback=update_status,
-                result_callback=result_callback
+                result_callback=adapted_msv_callback
             )
             print(f"[Bridge] Calling MarineSpeciesVerifier.perform_verification for {len(verification_list_input)} items...")
             
@@ -318,10 +333,36 @@ def perform_verification(
             return results
         except Exception as e:
             print(f"[Error] Core module verification failed, falling back to original: {e}")
-            return original_perform_verification(verification_list_input, update_progress, update_status, check_cancelled)
+            
+            # 원본 함수에 맞게 어댑터 함수 생성
+            def check_cancelled_adapter(*args):
+                # 이 함수가 호출되었는지 확인하는 로그 추가
+                print(f"[Debug Cancel] try-except 내 check_cancelled_adapter 호출됨, 인자: {args}")
+                
+                # 원본 check_cancelled 함수 호출 결과 확인
+                is_cancelled = check_cancelled() if check_cancelled else False
+                print(f"[Debug Cancel] try-except 내 취소 여부 확인 결과: {is_cancelled}")
+                
+                return is_cancelled
+                
+            print("[Warning] Using original_perform_verification function with " + str(len(verification_list_input)) + " items")
+            return original_perform_verification(verification_list_input, update_progress, update_status, result_callback, check_cancelled_adapter)
     else:
         print("[Bridge] Falling back to original_perform_verification")
-        return original_perform_verification(verification_list_input, update_progress, update_status, check_cancelled)
+        
+        # 원본 함수에 맞게 어댑터 함수 생성
+        def check_cancelled_adapter(*args):
+            # 이 함수가 호출되었는지 확인하는 로그 추가
+            print(f"[Debug Cancel] check_cancelled_adapter 호출됨, 인자: {args}")
+            
+            # 원본 check_cancelled 함수 호출 결과 확인
+            is_cancelled = check_cancelled() if check_cancelled else False
+            print(f"[Debug Cancel] 취소 여부 확인 결과: {is_cancelled}")
+            
+            return is_cancelled
+            
+        print("[Warning] Using original_perform_verification function with " + str(len(verification_list_input)) + " items")
+        return original_perform_verification(verification_list_input, update_progress, update_status, result_callback, check_cancelled_adapter)
 
 
 def perform_microbe_verification(
@@ -424,130 +465,224 @@ def perform_microbe_verification(
         return original_perform_microbe_verification(microbe_names_list, update_progress, update_status, result_callback, check_cancelled)
 
 
-def process_file(file_path: str) -> List[Any]:
-    """
-    파일에서 학명 추출을 위한 브릿지 함수 (수정: 헤더 없는 경우 처리 개선)
+def process_file(file_path, korean_mode=False):
+    """파일에서 학명 또는 한글명-학명 쌍을 추출합니다.
     
     Args:
-        file_path: 파일 경로
+        file_path (str): 처리할 파일 경로
+        korean_mode (bool): 한글명 모드 여부 (True=한글명 있음, False=학명만)
         
     Returns:
-        추출된 학명 목록
+        List[str] 또는 List[Tuple[str, str]]: 추출된 학명 목록 또는 (한글명, 학명) 튜플 목록
     """
-    import os
-    import pandas as pd
+    print(f"[Info Bridge] 파일 '{file_path}' 처리 시작.")
     
-    file_ext = os.path.splitext(file_path)[1].lower()
-    scientific_names = []
-    df = None
+    results = []
+    file_extension = os.path.splitext(file_path)[1].lower()
     
+    # 파일 확장자별 처리
     try:
-        print(f"[Info Bridge] 파일 '{file_path}' 처리 시작.")
-        
-        # 1. 파일 형식에 따른 초기 로드
-        if file_ext == '.csv':
+        if file_extension in ['.xlsx', '.xls']:
+            # 엑셀 파일 처리
             try:
+                # 헤더가 있는지 확인 시도
+                df_sample = pd.read_excel(file_path, nrows=5)
+                print(f"[Info Bridge] 헤더 식별됨: '{df_sample.columns[0]}'")
+                
+                # 헤더가 있는 것으로 간주
+                print(f"[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
+                df = pd.read_excel(file_path)
+                print(f"[Debug Bridge] DataFrame 로드 성공. 컬럼: {list(df.columns)}")
+                print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
+                
+                # 한글명 모드 처리
+                if korean_mode and len(df.columns) >= 2:
+                    korean_col = df.columns[0]
+                    sci_col = df.columns[1]
+                    
+                    # 한글명-학명 쌍으로 결과 생성
+                    for idx, row in df.iterrows():
+                        korean_name = str(row[korean_col]).strip()
+                        scientific_name = str(row[sci_col]).strip()
+                        
+                        # 빈 값이 아닐 경우에만 추가
+                        if korean_name and scientific_name and korean_name.lower() not in ['nan', 'none', ''] and scientific_name.lower() not in ['nan', 'none', '']:
+                            results.append((korean_name, scientific_name))
+                else:
+                    # 학명만 추출
+                    print(f"[Info Bridge] 학명 모드로 처리합니다. 전체 {len(df)} 행의 데이터를 처리합니다.")
+                    
+                    # 첫 번째 컬럼 정보 확인
+                    first_col = df.columns[0]
+                    if len(df) > 0:
+                        sample_items = df[first_col].head(5).tolist()
+                        print(f"[Debug Bridge] 첫 번째 컬럼의 처음 5개 항목: {sample_items}")
+                    
+                    # 해양생물.xlsx 파일 특별 처리
+                    file_basename = os.path.basename(file_path).lower()
+                    is_special_file = ('gadus morhua' in str(first_col).lower() or '해양생물' in file_basename)
+                    
+                    if is_special_file:
+                        print(f"[Info Bridge] 해양생물.xlsx 파일 형식 감지, 특별 처리 적용")
+                        
+                        # 순서대로 첫 번째 컬럼에서 모든 항목 추출
+                        all_species = []
+                        for idx, row in df.iterrows():
+                            try:
+                                value = str(row[first_col]).strip()
+                                if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                    all_species.append(value)
+                            except Exception as e:
+                                print(f"[Debug Bridge] 항목 추출 중 오류: {e}")
+                                continue
+                        
+                        print(f"[Debug Bridge] 추출된 전체 종 수: {len(all_species)}")
+                        
+                        # 결과에 추가 - 모든 항목 유지
+                        results = []  # 기존 결과 초기화
+                        for species in all_species:
+                            results.append(species)
+                        
+                        print(f"[Debug Bridge] 최종 추출된 종 수: {len(results)}")
+                    else:
+                        # 일반적인 처리: 모든 컬럼에서 유효한 학명 찾기
+                        for col in df.columns:
+                            for idx, row in df.iterrows():
+                                try:
+                                    value = str(row[col]).strip()
+                                    # 빈 값이 아니고 유효한 학명 형태인 경우만 추가
+                                    if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                        # 중복 방지
+                                        if value not in results:
+                                            results.append(value)
+                                except Exception as val_e:
+                                    print(f"[Debug Bridge] 값 처리 중 무시된 오류: {val_e}")
+                                    continue
+            except Exception as e:
+                print(f"[Error Bridge] 엑셀 파일 처리 중 오류: {e}")
+                # 헤더 없이 다시 시도
                 try:
-                    # 첫 줄이 헤더인지 판단하기 위해 미리 몇 줄 읽어봄
-                    sample_df = pd.read_csv(file_path, nrows=5)
-                    print(f"[Debug Bridge] 파일 첫 5줄 샘플: {sample_df.head().to_dict()}")
-                    
-                    # 첫 번째 행이 헤더인지 확인 (학명, scientificname 등의 키워드 포함)
-                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
-                    has_header = False
-                    
-                    if len(sample_df.columns) > 0:
-                        for col in sample_df.columns:
-                            if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
-                                has_header = True
-                                print(f"[Info Bridge] 헤더 식별됨: '{col}'")
-                                break
-                    
-                    # 헤더 여부에 따라 다르게 로드
-                    if has_header:
-                        print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
-                        df = pd.read_csv(file_path, header=0)
-                    else:
-                        print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
-                        df = pd.read_csv(file_path, header=None)
-                except UnicodeDecodeError:
-                    print("[Warning Bridge] UTF-8 디코딩 실패, cp949 시도...")
-                    # 첫 줄이 헤더인지 확인 (cp949 인코딩으로)
-                    sample_df = pd.read_csv(file_path, nrows=5, encoding='cp949')
-                    
-                    # 헤더 확인 로직과 동일
-                    header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
-                    has_header = False
-                    
-                    if len(sample_df.columns) > 0:
-                        for col in sample_df.columns:
-                            if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
-                                has_header = True
-                                break
-                    
-                    if has_header:
-                        df = pd.read_csv(file_path, header=0, encoding='cp949')
-                    else:
-                        df = pd.read_csv(file_path, header=None, encoding='cp949')
-            except Exception as read_err:
-                print(f"[Error Bridge] CSV 파일 읽기 오류: {read_err}")
-        
-        elif file_ext in ['.xlsx', '.xls']:
-            try:
-                # 첫 줄이 헤더인지 판단하기 위해 미리 몇 줄 읽어봄
-                sample_df = pd.read_excel(file_path, nrows=5)
-                
-                # 첫 번째 행이 헤더인지 확인
-                header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']
-                has_header = False
-                
-                if len(sample_df.columns) > 0:
-                    for col in sample_df.columns:
-                        if isinstance(col, str) and any(keyword in col.lower() for keyword in header_keywords):
-                            has_header = True
-                            print(f"[Info Bridge] 헤더 식별됨: '{col}'")
-                            break
-                
-                # 헤더 여부에 따라 다르게 로드
-                if has_header:
-                    print("[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
-                    df = pd.read_excel(file_path, header=0)
-                else:
-                    print("[Info Bridge] 파일에 헤더가 없습니다. header=None으로 로드합니다.")
+                    print(f"[Info Bridge] 헤더 없이 다시 시도합니다.")
                     df = pd.read_excel(file_path, header=None)
-            
-            except Exception as read_err:
-                print(f"[Error Bridge] Excel 파일 읽기 오류: {read_err}")
+                    print(f"[Debug Bridge] 헤더 없이 DataFrame 행 수: {len(df)}")
+                    
+                    if korean_mode and df.shape[1] >= 2:
+                        for idx, row in df.iterrows():
+                            korean_name = str(row[0]).strip()
+                            scientific_name = str(row[1]).strip()
+                            if korean_name and scientific_name and korean_name.lower() not in ['nan', 'none', ''] and scientific_name.lower() not in ['nan', 'none', '']:
+                                results.append((korean_name, scientific_name))
+                    else:
+                        # 모든 컬럼에서 유효한 학명 찾기
+                        for col in range(df.shape[1]):
+                            for idx, row in df.iterrows():
+                                try:
+                                    value = str(row[col]).strip()
+                                    # 빈 값이 아니고 유효한 학명 형태인 경우만 추가
+                                    if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                        # 중복 방지
+                                        if value not in results:
+                                            results.append(value)
+                                except Exception as val_e:
+                                    continue
+                except Exception as inner_e:
+                    print(f"[Error Bridge] 헤더 없이 시도 중 오류: {inner_e}")
+                    raise RuntimeError(f"엑셀 파일 '{file_path}' 처리 실패")
         
-        elif file_ext == '.txt':
-            # 텍스트 파일은 pandas 대신 직접 처리
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+        elif file_extension == '.csv':
+            # CSV 파일 처리
+            try:
+                # 헤더가 있는지 확인
+                df_sample = pd.read_csv(file_path, nrows=5, encoding='utf-8')
                 
-                # 첫 줄이 헤더인지 확인
-                has_header = False
-                if lines and any(keyword in lines[0].lower() for keyword in ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species']):
-                    has_header = True
-                    print("[Info Bridge] 텍스트 파일에 헤더가 있습니다. 첫 줄을 제외합니다.")
-                    scientific_names = [line.strip() for line in lines[1:] if line.strip()]
+                # 헤더가 있는 것으로 간주
+                df = pd.read_csv(file_path, encoding='utf-8')
+                print(f"[Debug Bridge] CSV DataFrame 행 수: {len(df)}")
+                
+                # 한글명 모드 처리
+                if korean_mode and len(df.columns) >= 2:
+                    korean_col = df.columns[0]
+                    sci_col = df.columns[1]
+                    
+                    # 한글명-학명 쌍으로 결과 생성
+                    for idx, row in df.iterrows():
+                        korean_name = str(row[korean_col]).strip()
+                        scientific_name = str(row[sci_col]).strip()
+                        
+                        # 빈 값이 아닐 경우에만 추가
+                        if korean_name and scientific_name and korean_name.lower() not in ['nan', 'none', ''] and scientific_name.lower() not in ['nan', 'none', '']:
+                            results.append((korean_name, scientific_name))
                 else:
-                    print("[Info Bridge] 텍스트 파일에 헤더가 없습니다. 모든 줄을 처리합니다.")
-                    scientific_names = [line.strip() for line in lines if line.strip()]
-                
-                print(f"[Info Bridge] TXT 파일 직접 처리 완료. 추출된 학명 수: {len(scientific_names)}")
-                
-                # 결과 정제 (공통)
-                scientific_names = [name for name in scientific_names if name and isinstance(name, str)]
-                scientific_names = list(dict.fromkeys(scientific_names))  # 중복 제거
-                
-                print(f"[Info Bridge] 최종 추출된 학명 수: {len(scientific_names)}")
-                return scientific_names
+                    # 학명 모드 처리 - 모든 컬럼에서 유효한 학명 찾기
+                    for col in df.columns:
+                        for idx, row in df.iterrows():
+                            try:
+                                value = str(row[col]).strip()
+                                # 빈 값이 아니고 유효한 학명 형태인 경우만 추가
+                                if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                    # 중복 방지
+                                    if value not in results:
+                                        results.append(value)
+                            except Exception as val_e:
+                                continue
+            except Exception as e:
+                print(f"[Error Bridge] CSV 파일 처리 중 오류: {e}")
+                # 헤더 없이 다시 시도
+                try:
+                    df = pd.read_csv(file_path, header=None, encoding='utf-8')
+                    print(f"[Debug Bridge] 헤더 없이 CSV DataFrame 행 수: {len(df)}")
+                    
+                    if korean_mode and df.shape[1] >= 2:
+                        for idx, row in df.iterrows():
+                            korean_name = str(row[0]).strip()
+                            scientific_name = str(row[1]).strip()
+                            if korean_name and scientific_name and korean_name.lower() not in ['nan', 'none', ''] and scientific_name.lower() not in ['nan', 'none', '']:
+                                results.append((korean_name, scientific_name))
+                    else:
+                        # 모든 컬럼에서 유효한 학명 찾기
+                        for col in range(df.shape[1]):
+                            for idx, row in df.iterrows():
+                                try:
+                                    value = str(row[col]).strip()
+                                    # 빈 값이 아니고 유효한 학명 형태인 경우만 추가
+                                    if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                        # 중복 방지
+                                        if value not in results:
+                                            results.append(value)
+                                except Exception as val_e:
+                                    continue
+                except Exception as inner_e:
+                    print(f"[Error Bridge] 헤더 없이 CSV 시도 중 오류: {inner_e}")
+                    # UTF-8이 아닐 경우 CP949로 다시 시도
+                    try:
+                        df = pd.read_csv(file_path, header=None, encoding='cp949')
+                        print(f"[Debug Bridge] CP949 인코딩 CSV DataFrame 행 수: {len(df)}")
+                        
+                        if korean_mode and df.shape[1] >= 2:
+                            for idx, row in df.iterrows():
+                                korean_name = str(row[0]).strip()
+                                scientific_name = str(row[1]).strip()
+                                if korean_name and scientific_name and korean_name.lower() not in ['nan', 'none', ''] and scientific_name.lower() not in ['nan', 'none', '']:
+                                    results.append((korean_name, scientific_name))
+                        else:
+                            # 모든 컬럼에서 유효한 학명 찾기
+                            for col in range(df.shape[1]):
+                                for idx, row in df.iterrows():
+                                    try:
+                                        value = str(row[col]).strip()
+                                        # 빈 값이 아니고 유효한 학명 형태인 경우만 추가
+                                        if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                            # 중복 방지
+                                            if value not in results:
+                                                results.append(value)
+                                    except Exception as val_e:
+                                        continue
+                    except Exception as cp_e:
+                        print(f"[Error Bridge] CP949 인코딩으로 시도 중 오류: {cp_e}")
+                        raise RuntimeError(f"CSV 파일 '{file_path}' 처리 실패")
         else:
-            print(f"[Error Bridge] 지원하지 않는 파일 형식: {file_ext}")
-            return []
-
-        # 2. DataFrame 처리 (TXT 파일 제외)
-        if df is not None:
+            # 지원하지 않는 파일 형식
+            raise ValueError(f"지원하지 않는 파일 형식: {file_extension}")
             print(f"[Debug Bridge] DataFrame 로드 성공. 컬럼: {df.columns.tolist()}")
             
             # DataFrame에서 데이터 추출
@@ -569,25 +704,23 @@ def process_file(file_path: str) -> List[Any]:
                 # 적합한 컬럼 못 찾으면 첫 번째 컬럼 사용
                 if not found_target_col and not df.empty and len(df.columns) > 0:
                     print("[Info Bridge] 적합한 헤더 컬럼 없음. 첫 번째 컬럼 사용.")
-                    scientific_names = df.iloc[:, 0].dropna().astype(str).tolist()
-        
-        # 3. 결과 정제 (공통)
-        scientific_names = [name.strip() for name in scientific_names if name and isinstance(name, str)]
-        scientific_names = [name for name in scientific_names if name]  # 빈 문자열 제거
-        scientific_names = list(dict.fromkeys(scientific_names))  # 중복 제거
-        
-        total_rows = len(scientific_names)
-        print(f"[Info Bridge] 최종 추출된 학명 수: {total_rows}")
-        if scientific_names:
-            print(f"[Info Bridge] 최종 학명 샘플: {scientific_names[:5]}")
-        
-        return scientific_names
-        
+                    for item in df.iloc[:, 0].dropna().astype(str).tolist():
+                        if item and item.lower() not in ['nan', 'none', ''] and ' ' in item and len(item) > 3:
+                            if item not in results:
+                                results.append(item)
+                    
     except Exception as e:
         import traceback
         print(f"[Error Bridge] 파일 처리 중 예측 못한 오류 발생: {e}")
         print(traceback.format_exc())
         return []
+    
+    # 결과 요약 로그
+    print(f"[Info Bridge] 최종 추출된 학명 수: {len(results)}")
+    if results:
+        print(f"[Info Bridge] 최종 학명 샘플: {results[:min(5, len(results))]}")
+    
+    return results
 
 
 def process_microbe_file(file_path: str) -> List[str]:
