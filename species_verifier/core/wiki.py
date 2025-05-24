@@ -2,47 +2,76 @@
 
 """Handles interactions with the Wikipedia API."""
 
-# Imports will be added later 
-
 import wikipedia
 import requests
 import re
 import traceback
+import time
 
-def get_wiki_summary(search_term):
+def get_wiki_summary(search_term, check_cancelled=None):
     """주어진 검색어로 위키백과 페이지의 내용을 가져옵니다.
 
     한국어 페이지를 먼저 시도하고, 없으면 영어 페이지를 검색합니다.
     다의어 페이지의 경우 첫 번째 옵션을 사용합니다.
     가져온 내용은 기본적인 정제 과정을 거칩니다.
+    
+    Args:
+        search_term (str): 검색할 학명
+        check_cancelled (callable, optional): 취소 여부를 확인하는 콜백 함수
+    
+    Returns:
+        str: 위키백과 요약 또는 오류 메시지
     """
     if not search_term or search_term == '-':
         return "정보 없음"
 
     try:
         print(f"[Info Wiki Core] '{search_term}' 위키백과 페이지 검색 시도")
+        
+        # 취소 여부 확인
+        if check_cancelled and check_cancelled():
+            print(f"[Debug Wiki] '{search_term}' 위키백과 검색 취소 요청됨")
+            return "작업 취소됨"
+            
         wikipedia.set_lang("ko") # 한국어 먼저 시도
         is_english_page = False
         page = None
 
         try:
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print(f"[Debug Wiki] '{search_term}' 한국어 위키백과 검색 전 취소 요청됨")
+                return "작업 취소됨"
+                
             page = wikipedia.page(search_term, auto_suggest=False)
             print(f"[Info Wiki Core] '{search_term}' 한국어 페이지 찾음")
         except wikipedia.exceptions.PageError:
             print(f"[Info Wiki Core] '{search_term}' 한국어 페이지 없음, 영어로 시도")
             wikipedia.set_lang("en")
+            
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print(f"[Debug Wiki] '{search_term}' 영어 위키백과 검색 전 취소 요청됨")
+                return "작업 취소됨"
+                
             try:
                 page = wikipedia.page(search_term, auto_suggest=False) # 영어로 재시도
                 print(f"[Info Wiki Core] '{search_term}' 영어 페이지 찾음")
                 is_english_page = True
             except wikipedia.exceptions.PageError: # 영어로도 못 찾은 경우
                 print(f"[Info Wiki Core] '{search_term}' 영어 페이지도 찾을 수 없음")
+                return "정보 없음 (페이지 없음)"
             except wikipedia.exceptions.DisambiguationError as e_en:
                 # 영어 다의어 처리
                 if e_en.options:
+                    # 취소 여부 확인
+                    if check_cancelled and check_cancelled():
+                        print(f"[Debug Wiki] '{search_term}' 영어 다의어 처리 전 취소 요청됨")
+                        return "작업 취소됨"
+                    
                     first_option_en = e_en.options[0]
                     print(f"[Warning Wiki Core] 영어 '{search_term}' 다의어, 첫 옵션 '{first_option_en}'으로 재시도")
-                    return get_wiki_summary(first_option_en) # 재귀 호출
+                    return get_wiki_summary(first_option_en, check_cancelled) # 재귀 호출
                 else:
                     print(f"[Warning Wiki Core] 영어 '{search_term}' 다의어 페이지지만 옵션 없음: {e_en}")
                     return "정보 없음 (다의어 처리 실패)"
@@ -50,9 +79,14 @@ def get_wiki_summary(search_term):
         except wikipedia.exceptions.DisambiguationError as e_ko:
             # 한국어 다의어 처리
             if e_ko.options:
+                # 취소 여부 확인
+                if check_cancelled and check_cancelled():
+                    print(f"[Debug Wiki] '{search_term}' 한국어 다의어 처리 전 취소 요청됨")
+                    return "작업 취소됨"
+                    
                 first_option_ko = e_ko.options[0]
                 print(f"[Warning Wiki Core] 한국어 '{search_term}' 다의어, 첫 옵션 '{first_option_ko}'으로 재시도")
-                return get_wiki_summary(first_option_ko) # 재귀 호출
+                return get_wiki_summary(first_option_ko, check_cancelled) # 재귀 호출
             else:
                 print(f"[Warning Wiki Core] 한국어 '{search_term}' 다의어 페이지지만 옵션 없음: {e_ko}")
                 return "정보 없음 (다의어 처리 실패)"
@@ -62,11 +96,31 @@ def get_wiki_summary(search_term):
              print(f"[Info Wiki Core] '{search_term}'에 대한 페이지 객체를 생성하지 못했습니다.")
              return "정보 없음"
 
-        # 페이지 전체 내용 가져오기
-        content = page.content
-        if content and content.strip():
+        # 취소 여부 확인
+        if check_cancelled and check_cancelled():
+            print(f"[Debug Wiki] '{search_term}' 페이지 내용 가져오기 전 취소 요청됨")
+            return "작업 취소됨"
+        
+        try:
+            # 전체 문서 내용 가져오기
+            content = page.content
             print(f"[Info Wiki Core] '{search_term}' 전체 내용 ({len(content)} chars) 가져옴")
-
+            
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print(f"[Debug Wiki] '{search_term}' 내용 가져온 후 취소 요청됨")
+                return "작업 취소됨"
+            
+            # 내용이 비어있는지 확인
+            if not content or not content.strip():
+                print(f"[Info Wiki Core] '{search_term}' 페이지 내용이 비어 있음")
+                return "정보 없음"
+                
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print(f"[Debug Wiki] '{search_term}' 내용 처리 전 취소 요청됨")
+                return "작업 취소됨"
+                
             # 내용 정제: 위키 마크업 정리 및 불필요한 섹션 제거
             sections = content.split('\n== ')
             main_content = sections[0] # 기본적으로 첫 번째 섹션만 사용
@@ -78,6 +132,11 @@ def get_wiki_summary(search_term):
                 skip_sections = ['references', 'external links', 'see also', 'further reading']
 
                 for i in range(1, section_count):
+                    # 취소 여부 확인
+                    if check_cancelled and check_cancelled():
+                        print(f"[Debug Wiki] '{search_term}' 섹션 처리 중 취소 요청됨")
+                        return "작업 취소됨"
+                        
                     if sections[i]:
                         section_parts = sections[i].split('\n', 1) # 제목과 내용 분리
                         section_title = section_parts[0].strip().lower()
@@ -88,6 +147,11 @@ def get_wiki_summary(search_term):
 
                 main_content = '\n'.join(included_sections)
                 print(f"[Info Wiki Core] 영어 페이지: {len(included_sections)}개 섹션 내용 결합됨")
+
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print(f"[Debug Wiki] '{search_term}' 콘텐츠 정리 전 취소 요청됨")
+                return "작업 취소됨"
 
             # 불필요한 마크업 제거
             cleaned_content = re.sub(r'\[[0-9]+\]', '', main_content)  # 각주 번호 [1], [2] 등 제거
@@ -101,9 +165,10 @@ def get_wiki_summary(search_term):
 
             print(f"[Info Wiki Core] '{search_term}' 최종 위키 요약 길이: {len(cleaned_content)} chars")
             return cleaned_content
-        else:
-            print(f"[Info Wiki Core] '{search_term}' 페이지 내용은 있으나 비어 있음")
-            return "정보 없음"
+        except Exception as inner_e:
+            print(f"[Error Wiki Core] '{search_term}' 페이지 내용 처리 중 오류: {inner_e}")
+            traceback.print_exc()
+            return "정보 없음 (내용 처리 오류)"
 
     except requests.exceptions.RequestException as req_e:
         print(f"[Error Wiki Core] '{search_term}' 위키 네트워크 오류: {req_e}")

@@ -1,0 +1,247 @@
+"""
+브릿지 모듈 - 종 검증 애플리케이션
+
+이 모듈은 GUI와 검증 로직 사이의 브릿지 역할을 합니다.
+파일 처리, 검증 로직 등 공통 기능을 제공합니다.
+취소 기능이 모든 검증 시스템에서 일관되게 작동하도록 개선되었습니다.
+"""
+import sys
+import os
+import pandas as pd
+from typing import List, Dict, Any, Union, Tuple, Optional, Callable
+from pathlib import Path
+
+# Core 모듈 사용 가능 여부 확인
+HAS_CORE_MODULES = True
+try:
+    from species_verifier.core.verifier import (
+        MarineSpeciesVerifier,
+        MicrobeVerifier
+    )
+except ImportError as e:
+    print(f"[Warning Bridge] Core modules not available: {e}")
+    HAS_CORE_MODULES = False
+
+# 파일 처리 함수
+def process_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
+    """
+    해양생물 검증용 파일 처리 함수 - 공통 파일 처리 모듈 사용
+    
+    Args:
+        file_path: 처리할 파일 경로
+        korean_mode: 한글명 처리 모드 활성화 여부
+        
+    Returns:
+        추출된 학명 또는 (한글명, 학명) 튜플 목록
+    """
+    from species_verifier.gui.common_file_processor import process_species_file
+    return process_species_file(file_path, korean_mode=korean_mode)
+
+def process_microbe_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
+    """
+    미생물 검증용 파일 처리 함수 - 공통 파일 처리 모듈 사용
+    
+    Args:
+        file_path: 처리할 파일 경로
+        korean_mode: 한글명 처리 모드 활성화 여부
+        
+    Returns:
+        추출된 학명 또는 (한글명, 학명) 튜플 목록
+    """
+    from species_verifier.gui.common_file_processor import process_species_file
+    return process_species_file(file_path, korean_mode=korean_mode)
+
+def process_col_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
+    """
+    통합생물(COL) 검증용 파일 처리 함수 - 공통 파일 처리 모듈 사용
+    
+    Args:
+        file_path: 처리할 파일 경로
+        korean_mode: 한글명 처리 모드 활성화 여부
+        
+    Returns:
+        추출된 학명 또는 (한글명, 학명) 튜플 목록
+    """
+    from species_verifier.gui.common_file_processor import process_species_file
+    return process_species_file(file_path, korean_mode=korean_mode)
+
+def perform_verification(
+    verification_list_input,
+    update_progress=None,
+    update_status=None,
+    result_callback=None,
+    check_cancelled=None
+):
+    """
+    해양생물 검증 함수 - 공통 검증 루프 사용
+    
+    Args:
+        verification_list_input: 검증할 목록
+        update_progress: 진행률 업데이트 콜백
+        update_status: 상태 업데이트 콜백
+        result_callback: 개별 결과 업데이트 콜백
+        check_cancelled: 취소 여부 확인 함수
+        
+    Returns:
+        검증 결과 목록
+    """
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.verifier import verify_species
+    
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 항목 검증 함수"""
+        # 항목이 튜플/리스트인 경우 (한글명, 학명)
+        if isinstance(item, (tuple, list)):
+            scientific_name = item[1] if len(item) > 1 else item[0]  # 학명 쿼리
+            input_name = item[0]  # 원본 입력 이름
+            result = verify_species(scientific_name)
+            result['input_name'] = input_name  # 원본 입력 이름 추가
+        else:
+            # 일반 학명 문자열인 경우
+            result = verify_species(item)
+            result['input_name'] = item  # 입력 이름 추가
+        
+        return result
+    
+    print(f"[Info Bridge] 해양생물 검증 시작 - 공통 검증 모듈 사용 (총 {len(verification_list_input)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=verification_list_input,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='marine': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="marine"
+    )
+    
+    return results
+
+def perform_microbe_verification(
+    microbe_names_list: List[str],
+    update_progress: Callable[[float], None] = None,
+    update_status: Callable[[str], None] = None,
+    result_callback: Callable[[Dict[str, Any]], None] = None,
+    context: Union[List[str], str, None] = None,
+    check_cancelled: Callable[[], bool] = None
+) -> List[Dict[str, Any]]:
+    """
+    미생물 검증 수행을 위한 브릿지 함수 - 공통 검증 모듈 사용
+    
+    Args:
+        microbe_names_list: 검증할 미생물 이름 목록
+        update_progress: 진행 상태 업데이트 콜백
+        update_status: 상태 메시지 업데이트 콜백
+        result_callback: 개별 결과 업데이트 콜백
+        context: 검증 컨텍스트 (파일 경로 또는 학명 리스트)
+        check_cancelled: 취소 여부 확인 함수
+        
+    Returns:
+        미생물 검증 결과 목록
+    """
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.verifier import verify_microbe_name
+    from species_verifier.utils.helpers import create_basic_microbe_result
+    
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 미생물 검증 함수"""
+        try:
+            # LPSN API 호출이 있는지 확인
+            if 'verify_microbe_name' in globals() or verify_microbe_name:
+                result = verify_microbe_name(item)
+            else:
+                # 기본 결과 생성
+                result = create_basic_microbe_result(item, item, False, "LPSN API 호출 실패")
+            
+            # 입력 이름 추가
+            result['input_name'] = item
+            return result
+        except Exception as e:
+            print(f"[Error Bridge] 미생물 검증 중 오류: {e}")
+            # 오류 발생 시 기본 결과 반환
+            return create_basic_microbe_result(item, item, False, f"검증 오류: {str(e)}")
+    
+    print(f"[Info Bridge] 미생물 검증 시작 - 공통 검증 모듈 사용 (총 {len(microbe_names_list)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=microbe_names_list,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='microbe': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="microbe"
+    )
+    
+    return results
+
+def perform_col_verification(
+    col_names_list: List[Union[str, Tuple[str, str]]],
+    update_progress: Callable[[float, int, int], None] = None,
+    update_status: Callable[[str], None] = None,
+    result_callback: Callable[[Dict[str, Any], str], None] = None,
+    check_cancelled: Callable[[], bool] = None
+) -> List[Dict[str, Any]]:
+    """
+    통합생물(COL) 검증 함수 - 공통 검증 모듈 사용
+    
+    Args:
+        col_names_list: 검증할 통합생물 이름 목록
+        update_progress: 진행률 업데이트 콜백
+        update_status: 상태 업데이트 콜백
+        result_callback: 개별 결과 업데이트 콜백
+        check_cancelled: 취소 여부 확인 함수
+        
+    Returns:
+        검증 결과 목록
+    """
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.col_api import verify_col_species
+    
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 COL 항목 검증 함수"""
+        try:
+            # 항목이 튜플/리스트인 경우 (한글명, 학명)
+            if isinstance(item, (tuple, list)):
+                input_name = item[0]  # 원본 입력 이름
+                scientific_name = item[1] if len(item) > 1 else item[0]  # 학명 쿼리
+                result = verify_col_species(scientific_name)
+                result['input_name'] = input_name  # 원본 입력 이름 추가
+            else:
+                # 일반 학명 문자열인 경우
+                result = verify_col_species(item)
+                result['input_name'] = item  # 입력 이름 추가
+            
+            return result
+        except Exception as e:
+            print(f"[Error Bridge] COL 검증 중 오류: {e}")
+            # 오류 발생 시 기본 결과 반환
+            return {
+                'input_name': item if isinstance(item, str) else item[0],
+                'valid': False,
+                'scientific_name': '',
+                'status': f"검증 오류: {str(e)}"
+            }
+    
+    print(f"[Info Bridge] 통합생물(COL) 검증 시작 - 공통 검증 모듈 사용 (총 {len(col_names_list)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=col_names_list,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='col': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="col"
+    )
+    
+    return results

@@ -1,11 +1,17 @@
 """
-리팩토링 브릿지 모듈
-
-이 모듈은 기존 main_gui.py 코드와 새로운 구조 간의 브릿지 역할을 합니다.
-리팩토링이 완료될 때까지 일시적으로 사용되는 모듈입니다.
 """
-import threading
-from typing import Callable, List, Dict, Any, Union, Tuple, Optional
+브릿지 모듈 - 종 검증 애플리케이션
+
+이 모듈은 GUI와 검증 로직 사이의 브릿지 역할을 합니다.
+파일 처리, 검증 로직 등 공통 기능을 제공합니다.
+취소 기능이 모든 검증 시스템에서 일관되게 작동하도록 개선되었습니다.
+"""
+"""
+import sys
+import traceback
+import types  # types 모듈 추가
+import pandas as pd
+from typing import List, Dict, Any, Union, Tuple, Optional, Callable
 import sys  # 추가
 import os   # 추가
 import pandas as pd # 추가 (process_file 내부 import 제거 가능)
@@ -39,20 +45,35 @@ except ImportError as e:
         if update_status:
             update_status(f"해양생물 검증 시작 (총 {len(verification_list_input)}개)")
         
-        # 각 항목에 대해 처리
+        # 각 항목에 대해 처리 - 연결된 취소 확인 기능 수정
         for idx, item in enumerate(verification_list_input):
-            # 취소 여부 확인 - 디버그 로그 추가
-            cancel_check_result = False
-            try:
-                if check_cancelled:
-                    print(f"[Debug Cancel] 취소 확인 함수 호출: {type(check_cancelled).__name__}")
-                    cancel_check_result = check_cancelled()
-                    print(f"[Debug Cancel] 취소 확인 결과: {cancel_check_result}")
-            except Exception as e:
-                print(f"[Error Cancel] 취소 확인 중 오류: {e}")
+            # 항목 처리 전마다 취소 여부 확인
+            cancelled = False
             
-            if cancel_check_result:
-                print("[Info Bridge] Original 함수에서 검증 취소 요청 받음 - 반복 중단")
+            # 디버그 로그 추가 - 취소 확인 함수 호출 과정 추적
+            if check_cancelled:
+                print(f"[Debug Cancel] 아이템 {idx+1}/{len(verification_list_input)} 처리 전 취소 확인 시도")
+                
+                # 예외 처리를 통해 안정적인 취소 확인
+                try:
+                    if isinstance(check_cancelled, types.FunctionType) or callable(check_cancelled):
+                        # 인자 없이 호출 시도
+                        cancelled = check_cancelled()
+                        print(f"[Debug Cancel] 취소 확인 결과(0 인자): {cancelled}")
+                    else:
+                        print(f"[Debug Cancel] 취소 함수가 호출 가능하지 않음: {type(check_cancelled)}")
+                except TypeError:
+                    # 호출 에러가 발생하면 인자를 전달해 보자
+                    try:
+                        cancelled = check_cancelled(idx)
+                        print(f"[Debug Cancel] 취소 확인 결과(1 인자): {cancelled}")
+                    except Exception as e2:
+                        print(f"[Error Cancel] 인자를 전달한 취소 확인 중 오류: {e2}")
+                except Exception as e:
+                    print(f"[Error Cancel] 취소 확인 중 예상치 못한 오류: {e}")
+            
+            if cancelled:
+                print(f"[Info Bridge] 취소 요청 받음 - 아이템 {idx+1}/{len(verification_list_input)} 처리 후 반복 중단")
                 break
                 
             # 진행률 업데이트
@@ -215,71 +236,54 @@ except ImportError as e:
     MarineSpeciesVerifier = None
     MicrobeVerifier = None
 
-
-def perform_verification(
-    verification_list_input: Union[List[str], List[Tuple[str, str]]],
-    update_progress: Callable[[float, Optional[int], Optional[int]], None] = None,
-    update_status: Callable[[str], None] = None,
-    result_callback: Callable[[Dict[str, Any]], None] = None,
-    check_cancelled: Callable[[], bool] = None
-) -> List[Dict[str, Any]]:
+def perform_verification(verification_list_input, update_progress=None, update_status=None, result_callback=None, check_cancelled=None):
     """
-    검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원)
+    해양생물 검증 함수 - 공통 검증 루프 사용
     
     Args:
-        verification_list_input: 검증할 이름 목록
-        update_progress: 진행 상태 업데이트 콜백
-        update_status: 상태 메시지 업데이트 콜백
+        verification_list_input: 검증할 목록
+        update_progress: 진행률 업데이트 콜백
+        update_status: 상태 업데이트 콜백
         result_callback: 개별 결과 업데이트 콜백
         check_cancelled: 취소 여부 확인 함수
         
     Returns:
-        검증 결과 목록 (Fallback 시에만 의미 있음)
+        검증 결과 목록
     """
-    # 로그 출력 향상: 항목 수 및 첫 번째 항목 정보 출력
-    print(f"[Debug Bridge perform_verification] 전체 항목 수: {len(verification_list_input)}")
-    if verification_list_input and len(verification_list_input) > 0:
-        sample_items = verification_list_input[:min(5, len(verification_list_input))]
-        print(f"[Debug Bridge perform_verification] 샘플 항목: {sample_items}")
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.verifier import verify_species
     
-    # API 지연 시간 확인 및 조정
-    from species_verifier.core.worms_api import API_DELAY
-    print(f"[Debug Bridge] 현재 API 지연 시간: {API_DELAY}초")
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 항목 검증 함수"""
+        # 항목이 튜플/리스트인 경우 (한글명, 학명)
+        if isinstance(item, (tuple, list)):
+            scientific_name = item[1] if len(item) > 1 else item[0]  # 학명 쿼리
+            input_name = item[0]  # 원본 입력 이름
+            result = verify_species(scientific_name)
+            result['input_name'] = input_name  # 원본 입력 이름 추가
+        else:
+            # 일반 학명 문자열인 경우
+            result = verify_species(item)
+            result['input_name'] = item  # 입력 이름 추가
+        
+        return result
     
-    # 수정: 클래스 존재 여부 확인
-    if HAS_CORE_MODULES and MarineSpeciesVerifier:
-        adapted_msv_callback = None
-        if result_callback:
-            # MarineSpeciesVerifier의 콜백은 인자 두 개(결과 딕셔너리, 탭 타입)를 전달하므로,
-            # 해당 탭 타입을 함께 전달하는 어댑터 생성
-            adapted_msv_callback = lambda r_dict, t="marine": result_callback(r_dict, t)
-
-        try:
-            # 수정: Verifier 인스턴스 생성 및 어댑터 콜백 전달
-            verifier = MarineSpeciesVerifier(
-                progress_callback=update_progress, 
-                status_update_callback=update_status,
-                result_callback=adapted_msv_callback,
-                check_cancelled=check_cancelled
-            )
-            print(f"[Bridge] Calling MarineSpeciesVerifier.perform_verification for {len(verification_list_input)} items...")
-            
-            # 검증 전 입력 학명 수 출력
-            print(f"[Debug Bridge] 검증할 해양생물 학명 수: {len(verification_list_input)}")
-            if verification_list_input and len(verification_list_input) > 0:
-                print(f"[Debug Bridge] 검증할 해양생물 학명 샘플: {verification_list_input[:min(5, len(verification_list_input))]}")
-            
-            # 모든 항목을 일괄 처리하도록 수정
-            print(f"[Info Bridge] 전체 {len(verification_list_input)}개 항목 검증을 일괄 처리합니다")
-            
-            # 10개 제한 문제 디버깅: 입력 목록의 전체 길이를 재확인
-            print(f"[Debug Bridge] 검증 직전 확인 - 입력 목록 길이: {len(verification_list_input)}")
-            
-            # API 지연 시간 조정 시도 (필요한 경우)
-            if len(verification_list_input) > 20:
-                print(f"[Debug Bridge] 많은 항목({len(verification_list_input)}개)이 감지되어 API 지연 시간을 0.2초로 조정합니다")
-                import species_verifier.core.worms_api as worms_api
-                worms_api.API_DELAY = 0.2
+    print(f"[Info Bridge] 해양생물 검증 시작 - 공통 검증 모듈 사용 (총 {len(verification_list_input)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=verification_list_input,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='marine': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="marine"
+    )
+    
+    return results
             
             try:
                 # 모든 항목을 한 번에 검증
@@ -335,32 +339,72 @@ def perform_verification(
         except Exception as e:
             print(f"[Error] Core module verification failed, falling back to original: {e}")
             
-            # 원본 함수에 맞게 어댑터 함수 생성
+            # 원본 함수에 맞게 어댑터 함수 생성 - 더 강화된 버전
             def check_cancelled_adapter(*args):
-                # 이 함수가 호출되었는지 확인하는 로그 추가
-                print(f"[Debug Cancel] try-except 내 check_cancelled_adapter 호출됨, 인자: {args}")
+                # 디버그 로그 추가 - 호출 시간 추적
+                print(f"[Debug Cancel] try-except 내 check_cancelled_adapter 호출됨 (args: {args})")
                 
-                # 원본 check_cancelled 함수 호출 결과 확인
-                is_cancelled = check_cancelled() if check_cancelled else False
-                print(f"[Debug Cancel] try-except 내 취소 여부 확인 결과: {is_cancelled}")
+                # 취소 함수가 존재하는지 확인
+                if not check_cancelled:
+                    print("[Debug Cancel] 취소 확인 함수가 None입니다")
+                    return False
                 
-                return is_cancelled
+                # 취소 함수 호출 시도 (안정적 방식)
+                try:
+                    # 인자 없이 호출
+                    result = check_cancelled()
+                    print(f"[Debug Cancel] try-except 내 취소 확인 결과: {result}")
+                    return result
+                except TypeError:
+                    # 인자가 있는 함수일 수 있으니 인자 전달 시도
+                    try:
+                        result = check_cancelled(0)  # 물리적 인덱스 전달
+                        print(f"[Debug Cancel] 인자가 있는 취소 확인 결과: {result}")
+                        return result
+                    except Exception as inner_e:
+                        print(f"[Error Cancel] 인자 전달 시도 중 오류: {inner_e}")
+                        # 오류에도 불구하고 취소를 시도해보자
+                        return True
+                except Exception as e:
+                    print(f"[Error Cancel] try-except 내 check_cancelled_adapter 에서 오류: {e}")
+                    # 예외 발생 시 안전하게 취소를 반환
+                    return True
                 
             print("[Warning] Using original_perform_verification function with " + str(len(verification_list_input)) + " items")
             return original_perform_verification(verification_list_input, update_progress, update_status, result_callback, check_cancelled_adapter)
     else:
         print("[Bridge] Falling back to original_perform_verification")
         
-        # 원본 함수에 맞게 어댑터 함수 생성
+        # 원본 함수에 맞게 어댑터 함수 생성 - 더 강화된 버전
         def check_cancelled_adapter(*args):
-            # 이 함수가 호출되었는지 확인하는 로그 추가
-            print(f"[Debug Cancel] check_cancelled_adapter 호출됨, 인자: {args}")
+            # 디버그 로그 추가 - 호출 시간 추적
+            print(f"[Debug Cancel] else 블록의 check_cancelled_adapter 호출됨 (args: {args})")
             
-            # 원본 check_cancelled 함수 호출 결과 확인
-            is_cancelled = check_cancelled() if check_cancelled else False
-            print(f"[Debug Cancel] 취소 여부 확인 결과: {is_cancelled}")
+            # 취소 함수가 존재하는지 확인
+            if not check_cancelled:
+                print("[Debug Cancel] 취소 확인 함수가 None입니다")
+                return False
             
-            return is_cancelled
+            # 취소 함수 호출 시도 (안정적 방식)
+            try:
+                # 인자 없이 호출
+                result = check_cancelled()
+                print(f"[Debug Cancel] else 블록의 취소 확인 결과: {result}")
+                return result
+            except TypeError:
+                # 인자가 있는 함수일 수 있으니 인자 전달 시도
+                try:
+                    result = check_cancelled(0)  # 물리적 인덱스 전달
+                    print(f"[Debug Cancel] 인자가 있는 취소 확인 결과: {result}")
+                    return result
+                except Exception as inner_e:
+                    print(f"[Error Cancel] 인자 전달 시도 중 오류: {inner_e}")
+                    # 오류에도 불구하고 취소를 시도해보자
+                    return True
+            except Exception as e:
+                print(f"[Error Cancel] else 블록의 check_cancelled_adapter 에서 오류: {e}")
+                # 예외 발생 시 안전하게 취소를 반환
+                return True
             
         print("[Warning] Using original_perform_verification function with " + str(len(verification_list_input)) + " items")
         return original_perform_verification(verification_list_input, update_progress, update_status, result_callback, check_cancelled_adapter)
@@ -375,7 +419,7 @@ def perform_microbe_verification(
     check_cancelled: Callable[[], bool] = None
 ) -> List[Dict[str, Any]]:
     """
-    미생물 검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원)
+    미생물 검증 수행을 위한 브릿지 함수 - 공통 검증 모듈 사용
     
     Args:
         microbe_names_list: 검증할 미생물 이름 목록
@@ -383,12 +427,119 @@ def perform_microbe_verification(
         update_status: 상태 메시지 업데이트 콜백
         result_callback: 개별 결과 업데이트 콜백
         context: 검증 컨텍스트 (파일 경로 또는 학명 리스트)
+        check_cancelled: 취소 여부 확인 함수
         
     Returns:
-        미생물 검증 결과 목록 (Fallback 시에만 의미 있음)
+        미생물 검증 결과 목록
     """
-    # 수정: 클래스 존재 여부 확인
-    if HAS_CORE_MODULES and MicrobeVerifier:
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.verifier import verify_microbe_name
+    from species_verifier.utils.helpers import create_basic_microbe_result
+    
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 미생물 검증 함수"""
+        try:
+            # LPSN API 호출이 있는지 확인
+            if 'verify_microbe_name' in globals() or verify_microbe_name:
+                result = verify_microbe_name(item)
+            else:
+                # 기본 결과 생성
+                result = create_basic_microbe_result(item, item, False, "LPSN API 호출 실패")
+            
+            # 입력 이름 추가
+            result['input_name'] = item
+            return result
+        except Exception as e:
+            print(f"[Error Bridge] 미생물 검증 중 오류: {e}")
+            # 오류 발생 시 기본 결과 반환
+            return create_basic_microbe_result(item, item, False, f"검증 오류: {str(e)}")
+    
+    print(f"[Info Bridge] 미생물 검증 시작 - 공통 검증 모듈 사용 (총 {len(microbe_names_list)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=microbe_names_list,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='microbe': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="microbe"
+    )
+    
+    return results
+    
+    # 더 이상 사용하지 않는 코드 제거
+    if False and HAS_CORE_MODULES and MicrobeVerifier:
+        pass
+
+
+def perform_col_verification(
+    col_names_list: List[Union[str, Tuple[str, str]]],
+    update_progress: Callable[[float, int, int], None] = None,
+    update_status: Callable[[str], None] = None,
+    result_callback: Callable[[Dict[str, Any], str], None] = None,
+    check_cancelled: Callable[[], bool] = None
+) -> List[Dict[str, Any]]:
+    """
+    통합생물(COL) 검증 함수 - 공통 검증 모듈 사용
+    
+    Args:
+        col_names_list: 검증할 통합생물 이름 목록
+        update_progress: 진행률 업데이트 콜백
+        update_status: 상태 업데이트 콜백
+        result_callback: 개별 결과 업데이트 콜백
+        check_cancelled: 취소 여부 확인 함수
+        
+    Returns:
+        검증 결과 목록
+    """
+    # 공통 검증 모듈 사용
+    from species_verifier.gui.common_verifier import perform_common_verification
+    from species_verifier.core.col_api import verify_col_species
+    
+    # 개별 검증 함수 정의
+    def verify_item(item):
+        """개별 COL 항목 검증 함수"""
+        try:
+            # 항목이 튜플/리스트인 경우 (한글명, 학명)
+            if isinstance(item, (tuple, list)):
+                input_name = item[0]  # 원본 입력 이름
+                scientific_name = item[1] if len(item) > 1 else item[0]  # 학명 쿼리
+                result = verify_col_species(scientific_name)
+                result['input_name'] = input_name  # 원본 입력 이름 추가
+            else:
+                # 일반 학명 문자열인 경우
+                result = verify_col_species(item)
+                result['input_name'] = item  # 입력 이름 추가
+            
+            return result
+        except Exception as e:
+            print(f"[Error Bridge] COL 검증 중 오류: {e}")
+            # 오류 발생 시 기본 결과 반환
+            return {
+                'input_name': item if isinstance(item, str) else item[0],
+                'valid': False,
+                'scientific_name': '',
+                'status': f"검증 오류: {str(e)}"
+            }
+    
+    print(f"[Info Bridge] 통합생물(COL) 검증 시작 - 공통 검증 모듈 사용 (총 {len(col_names_list)}개 항목)")
+    
+    # 공통 검증 루프 사용
+    results = perform_common_verification(
+        items_list=col_names_list,
+        verification_function=verify_item,
+        update_progress=update_progress,
+        update_status=update_status,
+        result_callback=lambda result, verification_type='col': result_callback(result, verification_type) if result_callback else None,
+        check_cancelled=check_cancelled,
+        verification_type="col"
+    )
+    
+    return results
         try:
             # 수정: Verifier 인스턴스 생성 및 콜백 전달
             verifier = MicrobeVerifier(
@@ -466,17 +617,25 @@ def perform_microbe_verification(
         return original_perform_microbe_verification(microbe_names_list, update_progress, update_status, result_callback, check_cancelled)
 
 
-def process_file(file_path, korean_mode=False):
-    """파일에서 학명 또는 한글명-학명 쌍을 추출합니다.
+def process_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
+    """
+    파일에서 해양생물 학명 추출을 위한 브릿지 함수 - 공통 파일 처리 모듈 사용
     
     Args:
-        file_path (str): 처리할 파일 경로
-        korean_mode (bool): 한글명 모드 여부 (True=한글명 있음, False=학명만)
+        file_path: 파일 경로
+        korean_mode: 한글명-학명 쌍 모드 여부
         
     Returns:
-        List[str] 또는 List[Tuple[str, str]]: 추출된 학명 목록 또는 (한글명, 학명) 튜플 목록
+        추출된 학명 목록 또는 (한글명, 학명) 쌍 목록
     """
-    print(f"[Info Bridge] 파일 '{file_path}' 처리 시작.")
+    # 공통 파일 처리 모듈 사용
+    from species_verifier.gui.common_file_processor import process_species_file
+    
+    print(f"[Info Bridge] 해양생물 학명 추출 시작 - 공통 파일 처리 모듈 사용")
+    results = process_species_file(file_path, korean_mode)
+    print(f"[Info Bridge] 해양생물 학명 추출 완료: {len(results)}개 항목")
+    
+    return results
     
     results = []
     file_extension = os.path.splitext(file_path)[1].lower()
@@ -526,21 +685,8 @@ def process_file(file_path, korean_mode=False):
                     if is_special_file:
                         print(f"[Info Bridge] 해양생물.xlsx 파일 형식 감지, 특별 처리 적용")
                         
-                        # 수정: 'Gadus morhua'를 헤더가 아닌 첫 번째 데이터로 처리
-                        print(f"[Info Bridge] 헤더로 인식되던 'Gadus morhua'를 데이터로 처리합니다.")
-                        
-                        # 첫 번째 행을 포함하여 모든 항목 추출
+                        # 순서대로 첫 번째 컬럼에서 모든 항목 추출
                         all_species = []
-                        
-                        # 콜럼 이름이 존재하는 경우 먼저 추가
-                        if 'gadus morhua' in str(first_col).lower():
-                            # 헤더에 학명이 있는 경우 첫 번째 항목으로 추가
-                            first_col_name = str(first_col).strip()
-                            if first_col_name and ' ' in first_col_name and len(first_col_name) > 3:
-                                all_species.append(first_col_name)
-                                print(f"[Debug Bridge] 콜럼 이름을 첫 번째 항목으로 추가: {first_col_name}")
-                        
-                        # 나머지 데이터 처리
                         for idx, row in df.iterrows():
                             try:
                                 value = str(row[first_col]).strip()
@@ -737,45 +883,116 @@ def process_file(file_path, korean_mode=False):
     return results
 
 
-def process_microbe_file(file_path: str) -> List[str]:
+def process_microbe_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
     """
-    파일에서 미생물 학명 추출을 위한 브릿지 함수
+    파일에서 미생물 학명 추출을 위한 브릿지 함수 - 공통 파일 처리 모듈 사용
     
     Args:
         file_path: 파일 경로
+        korean_mode: 한글명-학명 쌍 모드 여부 (기본값: False)
         
     Returns:
-        추출된 미생물 학명 목록
+        추출된 미생물 학명 목록 또는 (한글명, 학명) 쌍 목록
     """
-    import os
-    import pandas as pd
-    import csv
+    # 공통 파일 처리 모듈 사용
+    from species_verifier.gui.common_file_processor import process_species_file
     
-    file_ext = os.path.splitext(file_path)[1].lower()
-    microbe_names = []
+    print(f"[Info Bridge] 미생물 학명 추출 시작 - 공통 파일 처리 모듈 사용")
+    results = process_species_file(file_path, korean_mode)
+    print(f"[Info Bridge] 미생물 학명 추출 완료: {len(results)}개 항목")
     
-    print(f"[Info Bridge] 미생물 파일 '{file_path}' 처리 시작.")
+    return results
+
+
+def process_col_file(file_path: str, korean_mode: bool = False) -> List[Union[str, Tuple[str, str]]]:
+    """
+    파일에서 통합생물(COL) 학명 추출을 위한 브릿지 함수 - 공통 파일 처리 모듈 사용
+    
+    Args:
+        file_path: 파일 경로
+        korean_mode: 한글명-학명 쌍 모드 여부 (기본값: False)
+        
+    Returns:
+        추출된 통합생물 학명 목록 또는 (한글명, 학명) 쌍 목록
+    """
+    # 공통 파일 처리 모듈 사용
+    from species_verifier.gui.common_file_processor import process_species_file
+    
+    print(f"[Info Bridge] 통합생물(COL) 학명 추출 시작 - 공통 파일 처리 모듈 사용")
+    results = process_species_file(file_path, korean_mode)
+    print(f"[Info Bridge] 통합생물(COL) 학명 추출 완료: {len(results)}개 항목")
+    
+    return results
+    
+    def is_valid_species_name(name):
+        """학명으로 유효한지 확인하는 함수"""
+        if not isinstance(name, str):
+            return False
+            
+        name = name.strip()
+        # 빈 문자열 제외
+        if not name or len(name) < 3:
+            return False
+            
+        # 숫자로만 구성된 문자열 제외
+        if name.isdigit():
+            return False
+            
+        # 일반적인 학명 패턴 확인 (두 단어 이상으로 구성, 첫 단어는 대문자로 시작)
+        words = name.split()
+        if len(words) >= 2 and re.match(r'^[A-Z][a-z]+', words[0]):
+            return True
+            
+        return False
     
     def extract_names_from_dataframe(df, has_header=False):
-        """데이터프레임에서 이름 추출"""
+        """데이터프레임에서 이름 추출 - 개선된 버전"""
         names = []
-        header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
+        header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria', 'taxon']
+        target_column = None
         
+        # 1. 헤더 키워드로 컬럼 찾기
         if has_header:
-            # 헤더가 있는 경우
             for col in df.columns:
                 if any(keyword in str(col).lower() for keyword in header_keywords):
                     print(f"[Info Bridge] 대상 컬럼 발견: {col}")
-                    names.extend(df[col].dropna().astype(str).tolist())
+                    target_column = col
                     break
+        
+        # 2. 키워드로 찾지 못했거나 헤더가 없는 경우 첫 번째 컬럼 사용
+        if target_column is None and len(df.columns) > 0:
+            target_column = df.columns[0]
+            print(f"[Info Bridge] 키워드 컬럼 없음. 첫 번째 컬럼 사용: {target_column}")
+        
+        # 3. 대상 컬럼에서 데이터 추출
+        if target_column is not None:
+            values = df[target_column].dropna().astype(str).tolist()
+            # 유효한 학명만 필터링
+            filtered_values = [name for name in values if is_valid_species_name(name)]
+            
+            # 필터링 결과 로그
+            print(f"[Debug Bridge] 총 {len(values)}개 값 중 {len(filtered_values)}개 유효한 학명 발견")
+            
+            # 필터링된 결과가 없으면 원본 값 사용
+            if not filtered_values and values:
+                print("[Warning Bridge] 유효한 학명 형식 없음. 원본 값 사용")
+                names.extend(values)
             else:
-                # 헤더는 있지만 키워드가 없는 경우 첫 번째 컬럼 사용
-                if len(df.columns) > 0:
-                    names.extend(df.iloc[:, 0].dropna().astype(str).tolist())
-        else:
-            # 헤더가 없는 경우
-            if len(df.columns) > 0:
-                names.extend(df.iloc[:, 0].dropna().astype(str).tolist())
+                names.extend(filtered_values)
+        
+        # 4. 백업: 만약 학명을 못 찾았는데 다른 컬럼이 있다면 두 번째 컬럼 시도
+        if not names and len(df.columns) > 1:
+            print("[Info Bridge] 첫 번째 컬럼에서 학명 찾지 못함. 두 번째 컬럼 시도")
+            second_column = df.columns[1]
+            values = df[second_column].dropna().astype(str).tolist()
+            filtered_values = [name for name in values if is_valid_species_name(name)]
+            
+            if filtered_values:
+                print(f"[Info Bridge] 두 번째 컬럼에서 {len(filtered_values)}개 학명 발견")
+                names.extend(filtered_values)
+            elif values:
+                print("[Warning Bridge] 두 번째 컬럼에서 유효한 학명 형식 없음. 원본 값 사용")
+                names.extend(values)
         
         return names
     

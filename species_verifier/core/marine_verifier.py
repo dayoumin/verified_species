@@ -15,7 +15,16 @@ from species_verifier.core.worms_api import verify_species_list
 class MarineSpeciesVerifier:
     """해양생물 학명 검증을 위한 클래스"""
     
-    def __init__(self, progress_callback=None, status_update_callback=None, result_callback=None):
+    def __init__(self, progress_callback=None, status_update_callback=None, result_callback=None, check_cancelled=None):
+        """
+        초기화 함수
+        
+        Args:
+            progress_callback: 진행률 업데이트 콜백 함수 (0.0~1.0 값 전달)
+            status_update_callback: 상태 메시지 업데이트 콜백 함수 (문자열 메시지 전달)
+            result_callback: 개별 결과 업데이트 콜백 함수 (결과 딕셔너리 전달)
+            check_cancelled: 취소 여부 확인 콜백 함수 (불리언 값 반환)
+        """
         """
         초기화 함수
         
@@ -27,6 +36,7 @@ class MarineSpeciesVerifier:
         self.progress_callback = progress_callback
         self.status_update_callback = status_update_callback
         self.result_callback = result_callback
+        self.check_cancelled = check_cancelled
     
     def update_progress(self, progress: float, current_item=None, total_items=None):
         """진행률 업데이트
@@ -73,19 +83,15 @@ class MarineSpeciesVerifier:
         }
     
     def perform_verification(self, verification_list_input: List[Union[str, Tuple[str, str]]]) -> List[Dict[str, Any]]:
-        """주어진 목록(학명 문자열 리스트 또는 (국명, 학명) 튜플 리스트)을 검증
+        """
+        주어진 목록(학명 문자열 리스트 또는 (국명, 학명) 튜플 리스트)를 검증
         
         Args:
             verification_list_input: 검증할 목록 (문자열 리스트 또는 튜플 리스트)
             
         Returns:
-            검증 결과 목록 (주의: 실시간 콜백으로 전달되므로 이 반환값은 덜 중요해짐)
+            검증 결과 목록 (주의: 실시간 콜백으로 전달되므로 이 반환값은 덤 중요해짐)
         """
-        # 입력 타입 확인
-        is_korean_search = False
-        if verification_list_input and isinstance(verification_list_input[0], tuple):
-            is_korean_search = True
-            
         error_occurred = False
         error_message_details = ""
         num_skipped_worms = 0
@@ -100,122 +106,100 @@ class MarineSpeciesVerifier:
             self.update_status(f"총 {total_items}개 항목 처리 중...")
             self.update_progress(0)
 
-            # 처리 로직 분기
-            if is_korean_search:
-                # 한글 국명 입력 처리
-                for i, item in enumerate(verification_list_input):
-                    korean_name, scientific_name = item  # 튜플 언패킹
-                    
-                    # 진행률 표시 - 진행률, 현재 항목, 전체 항목 수 함께 전달
-                    self.update_status(f"'{korean_name}' 처리 중...")
-                    self.update_progress((i) / total_items, i+1, total_items)
-                    
-                    result_entry = {}  # 각 국명에 대한 결과 딕셔너리
-                    
-                    if scientific_name:  # 학명이 있는 경우
-                        print(f"[Info] Performing WoRMS verification for '{korean_name}' with scientific name '{scientific_name}'")
-                        species_to_verify = [(korean_name, scientific_name, korean_name)]
+            # 학명 입력 처리
+            for i, scientific_name in enumerate(verification_list_input):
+                # 취소 여부 확인
+                if self.check_cancelled and self.check_cancelled():
+                    print(f"[Info] Marine verification cancelled by user after {i}/{total_items} items")
+                    self.update_status(f"사용자 요청으로 취소됨: {i}/{total_items} 학명 처리 완료")
+                    break
+                # 현재 처리 중인 학명 표시
+                self.update_status(f"'{scientific_name}' 처리 중...")
+                # 진행률, 현재 항목, 전체 항목 수 함께 전달
+                self.update_progress(i / total_items, i+1, total_items)
+                
+                print(f"[Info] Performing WoRMS verification for scientific name: '{scientific_name}'")
+                
+                result_entry = None  # 결과 초기화
+                # 단일 학명에 대한 WoRMS 검증 수행
+                try:
+                    result_list = verify_species_list([scientific_name], check_cancelled=self.check_cancelled)
+                    if result_list and len(result_list) > 0:
+                        result_entry = result_list[0].copy()
+                        input_scientific_name = result_entry['scientific_name']  # 입력된 학명
                         
-                        try:
-                            verified_results = verify_species_list(species_to_verify)
-                            if verified_results and len(verified_results) > 0:
-                                result_entry = verified_results[0].copy()
-                                result_entry['mapped_name'] = scientific_name  # 매핑된 학명 필드 추가
-                            else:
-                                print(f"[Warning] No WoRMS result for {korean_name} (SciName: {scientific_name}). Creating basic entry.")
-                                result_entry = self.create_basic_result(korean_name, scientific_name, False, "WoRMS 처리 오류")
-                        except Exception as e:
-                            print(f"[Error] WoRMS verification failed for '{korean_name}': {e}")
-                            result_entry = self.create_basic_result(korean_name, scientific_name, False, "WoRMS 오류: " + str(e))
-                    else:  # 학명이 없었던 경우 (매핑 실패 등)
-                        num_skipped_worms += 1  # WoRMS 생략 카운트 증가
-                        result_entry = self.create_basic_result(korean_name, '-', False, 'N/A')
-
-                    # 위키피디아 요약 검색 (국명으로 시도)
-                    self.update_status(f"'{korean_name}' 위키백과 검색 중...")
-                    # 진행률, 현재 항목, 전체 항목 수 함께 전달
-                    self.update_progress((i + 0.5) / total_items, i+1, total_items)
-                    wiki_summary = get_wiki_summary(korean_name)
-                    
-                    result_entry['wiki_summary'] = wiki_summary if wiki_summary else '정보 없음'
-                    
-                    # 결과 목록에 추가
-                    results_list.append(result_entry)
-                    
-                    # 결과 콜백 호출
-                    if self.result_callback:
-                        self.result_callback(result_entry.copy(), 'marine')
-                    
-                    # 진행률 업데이트
-                    self.update_progress((i + 1) / total_items)
-            
-            else:  # 학명 입력 처리
-                for i, scientific_name in enumerate(verification_list_input):
-                    # 현재 처리 중인 학명 표시
-                    self.update_status(f"'{scientific_name}' 처리 중...")
-                    # 진행률, 현재 항목, 전체 항목 수 함께 전달
-                    self.update_progress(i / total_items, i+1, total_items)
-                    
-                    print(f"[Info] Performing WoRMS verification for scientific name: '{scientific_name}'")
-                    
-                    result_entry = None  # 결과 초기화
-                    # 단일 학명에 대한 WoRMS 검증 수행
-                    try:
-                        result_list = verify_species_list([scientific_name])
-                        if result_list and len(result_list) > 0:
-                            result_entry = result_list[0].copy()
-                            input_scientific_name = result_entry['input_name']  # 입력된 학명
-                            
-                            # mapped_name 설정 (WoRMS 추천 이름이 있으면 반영)
-                            if result_entry.get("similar_name") and result_entry["similar_name"] != "-":
-                                result_entry["mapped_name"] = result_entry["similar_name"] + " (WoRMS 추천)"
-                            else:
-                                result_entry["mapped_name"] = input_scientific_name
-                            
-                            # 위키 요약 검색
-                            wiki_summary = '-'  # 기본값
-                            current_worms_status = result_entry.get('worms_status', '').lower()
-                            error_statuses = ['-', 'n/a', 'error', 'no match', 'ambiguous', '형식 오류', 
-                                              'worms 결과 없음', 'worms 처리 오류', '오류:', 'worms 오류:']
-                            should_search_wiki = result_entry.get('is_verified') or \
-                                                 not any(status in current_worms_status for status in error_statuses)
-                            
-                            if should_search_wiki:
-                                self.update_status(f"'{scientific_name}' 위키백과 검색 중...")
-                                # 진행률, 현재 항목, 전체 항목 수 함께 전달
-                                self.update_progress((i + 0.5) / total_items, i+1, total_items)
-                                name_for_wiki = result_entry.get('scientific_name', scientific_name)  # Use valid name if available
-                                if name_for_wiki == '-': 
-                                    name_for_wiki = scientific_name
-                                wiki_summary = get_wiki_summary(name_for_wiki)
-                            
-                            result_entry['wiki_summary'] = wiki_summary if wiki_summary else '정보 없음'
+                        # mapped_name 설정 (WoRMS 추천 이름이 있으면 반영)
+                        if result_entry.get("similar_name") and result_entry["similar_name"] != "-":
+                            result_entry["mapped_name"] = result_entry["similar_name"] + " (WoRMS 추천)"
                         else:
-                            print(f"[Warning] 검증 결과 없음: {scientific_name}")
-                            result_entry = self.create_basic_result(
-                                scientific_name, scientific_name, False, "WoRMS 결과 없음"
-                            )
-                            
-                    except Exception as e:
-                        print(f"[Error] Species verification failed for '{scientific_name}': {e}")
-                        traceback.print_exc()
+                            result_entry["mapped_name"] = input_scientific_name
                         
-                        # 오류 발생 시 기본 결과 생성
+                        # 위키 요약 검색
+                        wiki_summary = '-'  # 기본값
+                        current_worms_status = result_entry.get('worms_status', '').lower()
+                        error_statuses = ['-', 'n/a', 'error', 'no match', 'ambiguous', '형식 오류', 
+                                          'worms 결과 없음', 'worms 처리 오류', '오류:', 'worms 오류:']
+                        should_search_wiki = result_entry.get('is_verified') or \
+                                             not any(status in current_worms_status for status in error_statuses)
+                        
+                        # 위키백과 검색 전에 취소 여부 확인
+                        if self.check_cancelled and self.check_cancelled():
+                            print(f"[Info] Wiki search cancelled by user after {i}/{total_items} items")
+                            self.update_status(f"사용자 요청으로 취소됨: {i}/{total_items} 학명 처리 완료")
+                            break
+                        
+                        if should_search_wiki:
+                            self.update_status(f"'{scientific_name}' 위키백과 검색 중...")
+                            # 진행률, 현재 항목, 전체 항목 수 함께 전달
+                            self.update_progress((i + 0.5) / total_items, i+1, total_items)
+                            name_for_wiki = result_entry.get('scientific_name', scientific_name)  # Use valid name if available
+                            if name_for_wiki == '-': 
+                                name_for_wiki = scientific_name
+                            try:
+                                # 위키백과 검색 전 취소 여부 확인
+                                if self.check_cancelled and self.check_cancelled():
+                                    print(f"[Debug] 위키백과 검색 전 취소 요청 감지됨")
+                                    break
+                                    
+                                # 취소 콜백 함수 전달
+                                wiki_summary = get_wiki_summary(name_for_wiki, check_cancelled=self.check_cancelled)
+                                print(f"[Info Wiki Core] '{name_for_wiki}' 최종 위키 요약 길이: {len(wiki_summary)} chars")
+                                
+                                # 위키백과 검색 후 취소 여부 확인
+                                if self.check_cancelled and self.check_cancelled():
+                                    print(f"[Debug] 위키백과 검색 후 취소 요청 감지됨")
+                                    break
+                                    
+                                result_entry['wiki_summary'] = wiki_summary
+                            except Exception as e:
+                                print(f"[Error Wiki] 위키백과 요약 가져오기 오류 ({name_for_wiki}): {e}")
+                                traceback.print_exc()
+                                result_entry['wiki_summary'] = f"위키 오류: {str(e)[:100]}"
+                    else:
+                        print(f"[Warning] 검증 결과 없음: {scientific_name}")
                         result_entry = self.create_basic_result(
-                            scientific_name, scientific_name, False, f"오류: {str(e)}"
+                            scientific_name, scientific_name, False, "WoRMS 결과 없음"
                         )
-                        error_occurred = True
-                        error_message_details = str(e)
+                except Exception as e:
+                    print(f"[Error] Species verification failed for '{scientific_name}': {e}")
+                    traceback.print_exc()
                     
-                    # 결과 목록에 추가
-                    results_list.append(result_entry)
+                    # 오류 발생 시 기본 결과 생성
+                    result_entry = self.create_basic_result(
+                        scientific_name, scientific_name, False, f"오류: {str(e)}"
+                    )
+                    error_occurred = True
+                    error_message_details = str(e)
+                
+                # 결과 목록에 추가
+                results_list.append(result_entry)
                     
-                    # 결과 콜백 호출
-                    if self.result_callback:
-                        self.result_callback(result_entry.copy(), 'marine')
+                # 결과 콜백 호출
+                if self.result_callback:
+                    self.result_callback(result_entry.copy(), 'marine')
                     
-                    # 진행률 업데이트
-                    self.update_progress((i + 1) / total_items)
+                # 진행률 업데이트
+                self.update_progress((i + 1) / total_items)
             
             # 최종 진행률 업데이트
             self.update_progress(1.0)

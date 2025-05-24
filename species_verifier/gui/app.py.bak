@@ -733,7 +733,8 @@ class SpeciesVerifierApp(ctk.CTk):
             return self.korean_name_mappings[korean_name]
         return None
     
-    def _start_verification_thread(self, verification_list):
+    def _start_verification_thread(self, verification_list: Union[List[str], List[Tuple[str, str]]]):
+        """해양생물 검증 스레드 시작"""
         # 진행 UI 표시
         self._show_progress_ui("검증 준비 중...")
         self._set_ui_state("disabled")
@@ -754,7 +755,7 @@ class SpeciesVerifierApp(ctk.CTk):
         if self.marine_tab:
              self.marine_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
-    def _perform_verification(self, verification_list_input):
+    def _perform_verification(self, verification_list_input: Union[List[str], List[Tuple[str, str]]]):
         """해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
         try:
             # 취소 플래그 초기화
@@ -804,21 +805,21 @@ class SpeciesVerifierApp(ctk.CTk):
             traceback.print_exc()
         finally:
             # UI 상태 복원
-            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self.status_bar.set_ready("입력 대기 중"))
             self.after(0, lambda: self._set_ui_state("normal"))
             self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
             # 완료 후 포커스 설정은 유지
             if self.marine_tab:
                 self.after(0, lambda: self.marine_tab.focus_entry())
 
-    def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None):
+    def _start_microbe_verification_thread(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 스레드 시작"""
         # 진행 UI 표시 (초기 메시지 개선)
         initial_msg = "미생물 검증 준비 중..."
         if isinstance(context, str): # 파일 경로인 경우
             initial_msg = f"파일 '{os.path.basename(context)}' 검증 준비 중..."
         elif isinstance(context, list): # 직접 입력인 경우
-            initial_msg = f"입력된 {len(context)}개 학명 검증 중..."
+            initial_msg = f"입력된 {len(context)}개 학명 검증 준비 중..."
             
         self._show_progress_ui(initial_msg)
         self._set_ui_state("disabled")
@@ -839,7 +840,7 @@ class SpeciesVerifierApp(ctk.CTk):
         if self.microbe_tab:
             self.microbe_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
-    def _perform_microbe_verification(self, microbe_names_list, context: Union[List[str], str, None] = None):
+    def _perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
         try:
             # 취소 플래그 초기화
@@ -850,7 +851,6 @@ class SpeciesVerifierApp(ctk.CTk):
                 return self.is_cancelled
             
             # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
-            # 실제 처리할 항목 수로 설정 (입력 리스트 길이)
             self.total_verification_items = len(microbe_names_list)
             print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
             print(f"[Debug Microbe] microbe_names_list 타입: {type(microbe_names_list)}, 길이: {len(microbe_names_list)}")
@@ -972,30 +972,37 @@ class SpeciesVerifierApp(ctk.CTk):
         self.status_bar.set_status(text)
     
     def update_progress(self, progress_value: float, current_item: int = None, total_items: int = None):
-        """진행 상황 업데이트 (모든 탭에서 공통으로 사용)"""
+        """진행 상태 업데이트"""
         # 로그 추가
         print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
         
-        # 1. 파일에서 추출한 전체 항목 수 확인 (일관성 보장)
+        # 1. 저장된 전체 항목 수 확인
         stored_total_items = getattr(self, 'total_verification_items', None)
-        print(f"[Debug Progress] 파일에서 추출한 전체 항목 수: {stored_total_items}")
+        print(f"[Debug Progress] 저장된 전체 항목 수: {stored_total_items}")
         
-        # 2. 전체 항목 수 결정 - 파일에서 추출한 항목 수 우선 사용
-        # 10개 제한 문제 적극 해결: 저장된 전체 항목 수가 있으면 항상 우선 사용
-        if stored_total_items is not None:
+        # 2. 전체 항목 수 결정 (우선순위: 강화된 로직)
+        # 10개 제한 문제 적극 해결: 저장된 전체 항목 수가 10보다 크면 항상 우선 사용
+        if stored_total_items is not None and stored_total_items > 10 and (total_items is None or total_items <= 10):
             actual_total_items = stored_total_items
-            print(f"[Debug Progress] 파일 항목 수 사용: {actual_total_items}개")
+            print(f"[Debug Progress] 10개 제한 우회: 전체 항목 수를 {actual_total_items}개로 강제 설정")
         else:
-            # 저장된 값이 없을 경우 매개변수 사용
-            actual_total_items = total_items
+            # 이전 로직: 매개변수로 전달된 값 우선 사용
+            actual_total_items = total_items if total_items is not None else stored_total_items
+            # 10개로 제한되는 문제 추가 확인
+            if actual_total_items is not None and actual_total_items <= 10 and stored_total_items is not None and stored_total_items > 10:
+                print(f"[Debug Progress] 전체 항목 수 문제 감지: {actual_total_items} <= 10 및 저장된 값 {stored_total_items} > 10")
+                actual_total_items = stored_total_items  # 저장된 값 사용
+        
+        print(f"[Debug Progress] 결정된 전체 항목 수: {actual_total_items}")
         
         # 3. 현재 항목 번호 결정
         actual_current_item = current_item
         if actual_current_item is None and actual_total_items is not None:
             actual_current_item = max(1, min(int(progress_value * actual_total_items), actual_total_items))
-        print(f"[Debug Progress] 결정된 현재 항목: {actual_current_item}, 전체 항목 수: {actual_total_items}")
-        
+        print(f"[Debug Progress] 결정된 현재 항목: {actual_current_item}")
+                
         # 4. 진행률 업데이트 (전체 항목 수는 파일에서 추출한 전체 항목 수 사용)
+        print(f"[Debug Progress] 진행률 업데이트 - 값: {progress_value}, 항목: {actual_current_item}/{actual_total_items}")
         self.status_bar.set_progress(progress_value, actual_current_item, actual_total_items)
     
     def _show_progress_ui(self, initial_text: str = "", reset_file_label: bool = False):
@@ -1071,41 +1078,23 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def _process_result_queue(self):
         try:
-            # 최대 처리할 항목 수 (None = 큐가 비어있을 때까지 모두 처리)
-            max_items_per_call = None
-            
-            # 취소 요청 시 처리할 항목 수 제한
-            if hasattr(self, 'is_cancelled') and self.is_cancelled:
-                max_items_per_call = 10  # 취소 시에는 적은 양만 처리하여 UI 반응성 유지
-                print(f"[Debug] 취소된 작업의 결과 처리 중 - 제한된 처리량: {max_items_per_call}")
-            
-            # 남은 큐 사이즈 확인
-            queue_size = self.result_queue.qsize()
-            if queue_size > 0:
-                print(f"[Debug] 현재 큐에 {queue_size}개 결과 대기 중")
-            
-            # 항목 처리
-            processed_count = 0
-            while max_items_per_call is None or processed_count < max_items_per_call:
-                try:
-                    result_data = self.result_queue.get_nowait()
-                    if isinstance(result_data, tuple) and len(result_data) == 2:
-                        result_dict, tab_type = result_data
-                        self._update_single_result(result_dict, tab_type)
-                    else:
-                        print(f"[Warning] Invalid data format in queue: {result_data}")
-                    self.result_queue.task_done()
-                    processed_count += 1
-                except queue.Empty:
-                    break  # 큐가 비어있으면 중단
+            # 최대 10개 항목까지 처리 (한 번의 호출에서)
+            for _ in range(10):
+                result_data = self.result_queue.get_nowait()
+                if isinstance(result_data, tuple) and len(result_data) == 2:
+                    result_dict, tab_type = result_data
+                    self._update_single_result(result_dict, tab_type)
+                else:
+                    print(f"[Warning] Invalid data format in queue: {result_data}")
+                self.result_queue.task_done()
+        except queue.Empty:
+            pass
         except Exception as e:
             print(f"[Error] Error processing result queue: {e}")
             traceback.print_exc()
         finally:
-            # 큐 처리 함수 다시 스케줄링
-            # 큐가 비어있거나 취소된 경우 더 빨리 처리
-            delay = 20 if self.result_queue.empty() or (hasattr(self, 'is_cancelled') and self.is_cancelled) else 50
-            self.after(delay, self._process_result_queue)
+            # 큐 처리 함수를 더 자주 호출 (100ms → 50ms)
+            self.after(50, self._process_result_queue)
 
     def _cancel_operation(self):
         """작업 취소 - 모든 취소 기능을 이 메서드로 통합"""
@@ -1118,23 +1107,6 @@ class SpeciesVerifierApp(ctk.CTk):
             self.status_bar.cancel_button.configure(state="disabled")
             self.status_bar.set_status("검증 취소 중...")
         
-        # 결과 큐 초기화 (추가) - 경쟁 상태를 예방하기 위해 주의해야 함
-        try:
-            # 큐 비우기 - 모든 대기 중인 결과 제거
-            while not self.result_queue.empty():
-                try:
-                    self.result_queue.get_nowait()
-                    self.result_queue.task_done()
-                except Exception as e:
-                    print(f"[Warning] 취소 중 큐 비우기 오류: {e}")
-                    break
-            print(f"[Debug] 결과 큐 초기화 완료")
-        except Exception as clear_e:
-            print(f"[Error] 결과 큐 초기화 실패: {clear_e}")
-        
-        # 스레드 중단 표시
-        print("[Debug] 스레드 중단 요청 중 - 처리는 뒤에 자동 완료됩니다")
-        
         # 전체 항목 수 표시 업데이트
         if hasattr(self, 'total_verification_items'):
             processed_items = 0  # 취소되어 완료된 항목은 없음
@@ -1146,12 +1118,10 @@ class SpeciesVerifierApp(ctk.CTk):
             self.update_progress(0.0)  # 진행률만 0으로 초기화
             self._update_progress_label("작업이 취소되었습니다.")
         
-        # UI 상태 즉시 초기화
-        self._set_ui_state("idle")
-        print("[Debug] UI 상태가 초기화되었습니다.")
-        if hasattr(self, '_reset_status_ui'):
-            # 연속 호출 시 오류 방지를 위해 after 메소드 사용
-            self.after(0, lambda: self._reset_status_ui())
+        # UI 상태 초기화 - self 정청성 오류 수정
+        if hasattr(self, 'status_bar'):
+            # UI 상태 복원
+            self.after(0, lambda: self.status_bar.set_ready("입력 대기 중"))
             self.after(10, lambda: self._set_ui_state("normal"))
         
         # 검증 중 플래그 해제 - 다른 검증 시작 허용
@@ -1168,17 +1138,12 @@ class SpeciesVerifierApp(ctk.CTk):
         
         if msg_type == "error":
             messagebox.showerror(title, message)
-        elif msg_type == "warning":
-            messagebox.showwarning(title, message)
-        else:
-            messagebox.showinfo(title, message)
-            
-    # --- 이벤트 처리 유틸리티 함수 ---
-    def _show_tooltip(self, text: str, x: int, y: int):
-        """마우스 커서 근처에 툴팁 팝업을 표시합니다."""
-        # 기존 툴팁 윈도우 제거
-        self._hide_tooltip()
 
+    # 미생물 탭
+    if hasattr(self, 'microbe_tab'):
+        self.microbe_tab.set_input_state(enable_state) # 탭 내부 입력 요소 상태 변경
+        if is_idle:
+             self.microbe_tab._update_verify_button_state()
         # 툴팁 위치 조정 (마우스 커서 오른쪽 아래)
         x_offset = 15
         y_offset = 10
@@ -1541,14 +1506,6 @@ class SpeciesVerifierApp(ctk.CTk):
             print(traceback.format_exc())
             self.show_centered_message("error", "저장 실패", f"결과를 저장하는 중 오류가 발생했습니다.\n 오류: {e}")
 
-    def _reset_status_ui(self):
-        """UI 상태를 초기화하고 기본 상태로 되돌립니다."""
-        if hasattr(self, 'status_bar'):
-            self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
-        self.is_verifying = False
-        self.is_cancelled = False
-        print("[Debug] UI 상태가 초기화되었습니다.")
-
     def _copy_all_info(self, tree_type, item_id):
         """선택한 항목의 모든 정보를 클립보드에 복사합니다."""
         tree = None
@@ -1619,7 +1576,7 @@ class SpeciesVerifierApp(ctk.CTk):
         except Exception as e:
             print(f"[Error] 정보 복사 중 오류: {e}")
             self.status_bar.set_status("정보 복사 실패.")
-            self.after(3000, self._reset_status_ui)
+            self.after(3000, lambda: self.status_bar.set_ready("입력 대기 중"))
 
     # --- 새로운 메서드: 단일 결과 업데이트 (수정: COL 탭 추가) --- 
     def _update_single_result(self, result: Dict[str, Any], tab_type: str):
