@@ -973,21 +973,41 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def update_progress(self, progress_value: float, current_item: int = None, total_items: int = None):
         """진행 상황 업데이트 (모든 탭에서 공통으로 사용)"""
-        # 로그 추가
+        # 취소 상태인 경우 진행률 업데이트 무시 또는 초기화
+        if hasattr(self, 'is_cancelled') and self.is_cancelled:
+            print(f"[Debug Progress] 취소 상태에서 진행률 업데이트 요청 무시: {progress_value}, {current_item}, {total_items}")
+            # 취소 상태에서는 진행률을 0으로 설정
+            if hasattr(self, 'status_bar'):
+                self.status_bar.set_progress(0, 0, 1)
+            return
+            
         print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
         
-        # 1. 파일에서 추출한 전체 항목 수 확인 (일관성 보장)
-        stored_total_items = getattr(self, 'total_verification_items', None)
-        print(f"[Debug Progress] 파일에서 추출한 전체 항목 수: {stored_total_items}")
+        # 1. 전체 항목 수 결정
+        actual_total_items = total_items
         
-        # 2. 전체 항목 수 결정 - 파일에서 추출한 항목 수 우선 사용
-        # 10개 제한 문제 적극 해결: 저장된 전체 항목 수가 있으면 항상 우선 사용
-        if stored_total_items is not None:
-            actual_total_items = stored_total_items
-            print(f"[Debug Progress] 파일 항목 수 사용: {actual_total_items}개")
-        else:
-            # 저장된 값이 없을 경우 매개변수 사용
-            actual_total_items = total_items
+        # 파일에서 추출한 전체 항목 수 확인
+        file_item_count = getattr(self, 'current_file_item_count', None)
+        print(f"[Debug Progress] 파일에서 추출한 전체 항목 수: {file_item_count}")
+        
+        # 전체 항목 수 결정 로직
+        if file_item_count is not None and file_item_count > 0:
+            # 파일 항목 수가 있으면 우선 사용
+            print(f"[Debug Progress] 파일 항목 수 사용: {file_item_count}개")
+            actual_total_items = file_item_count
+        elif hasattr(self, 'total_verification_items') and self.total_verification_items is not None:
+            # 다음으로 total_verification_items 사용
+            actual_total_items = self.total_verification_items
+        
+        # 2. 전체 항목 수가 10개 이상인 경우 특별 처리
+        if actual_total_items is not None and actual_total_items > 10:
+            # 10개 이상인 경우, 전체 항목 수를 명시적으로 설정
+            if current_item is not None and current_item > 0:
+                # 현재 항목이 있으면 그대로 사용
+                pass
+            elif progress_value > 0:
+                # 진행률이 있으면 현재 항목 계산
+                current_item = max(1, int(progress_value * actual_total_items))
         
         # 3. 현재 항목 번호 결정
         actual_current_item = current_item
@@ -996,7 +1016,8 @@ class SpeciesVerifierApp(ctk.CTk):
         print(f"[Debug Progress] 결정된 현재 항목: {actual_current_item}, 전체 항목 수: {actual_total_items}")
         
         # 4. 진행률 업데이트 (전체 항목 수는 파일에서 추출한 전체 항목 수 사용)
-        self.status_bar.set_progress(progress_value, actual_current_item, actual_total_items)
+        if hasattr(self, 'status_bar'):
+            self.status_bar.set_progress(progress_value, actual_current_item, actual_total_items)
     
     def _show_progress_ui(self, initial_text: str = "", reset_file_label: bool = False):
         """진행 UI 표시"""
@@ -1139,7 +1160,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self.is_verifying = False
             
             # UI 상태 복원
-            self.after(0, lambda: self._reset_ui_state())
+            self.after(0, lambda: self._set_ui_state("idle"))
             
             # 상태 메시지 업데이트
             if hasattr(self, 'status_bar'):
@@ -1155,10 +1176,49 @@ class SpeciesVerifierApp(ctk.CTk):
             # 전체 항목 수 변수 초기화
             if hasattr(self, 'total_verification_items'):
                 delattr(self, 'total_verification_items')
+            
+            # 파일 이름 및 개수 초기화
+            if hasattr(self, 'current_file_path'):
+                delattr(self, 'current_file_path')
+            if hasattr(self, 'current_file_item_count'):
+                delattr(self, 'current_file_item_count')
+            
+            # 현재 활성화된 탭에 따라 파일 정보 초기화
+            if hasattr(self, 'tab_view'):
+                current_tab = self.tab_view.get()
+                print(f"[Debug] 현재 활성화된 탭: {current_tab}")
                 
-            # 진행률 초기화
+                # 해양생물 탭이 활성화된 경우
+                if current_tab == "해양생물(WoRMS)" and hasattr(self, 'marine_tab'):
+                    self.marine_tab.reset_file_info()
+                    print("[Debug] 해양생물 탭 파일 정보 초기화 완료")
+                    
+                # 미생물 탭이 활성화된 경우
+                elif current_tab == "미생물 (LPSN)" and hasattr(self, 'microbe_tab'):
+                    # 미생물 탭에 reset_file_info 메서드가 없는 경우 set_selected_file(None)을 사용
+                    if hasattr(self.microbe_tab, 'reset_file_info'):
+                        self.microbe_tab.reset_file_info()
+                    else:
+                        self.microbe_tab.set_selected_file(None)
+                    print("[Debug] 미생물 탭 파일 정보 초기화 완료")
+                    
+                # 전체생물 탭이 활성화된 경우
+                elif current_tab == "담수 등 전체생물(COL)" and hasattr(self, 'col_tab'):
+                    # 전체생물 탭에 reset_file_info 메서드가 없는 경우 set_selected_file(None)을 사용
+                    if hasattr(self.col_tab, 'reset_file_info'):
+                        self.col_tab.reset_file_info()
+                    else:
+                        self.col_tab.set_selected_file(None)
+                    print("[Debug] 전체생물 탭 파일 정보 초기화 완료")
+            
+            # 상태 표시줄 초기화
             if hasattr(self, 'status_bar'):
+                # 진행률 초기화
                 self.after(0, lambda: self.status_bar.set_progress(0, 0, 1))
+                # 상태 메시지 초기화
+                self.after(0, lambda: self.status_bar.set_status("준비됨"))
+                # UI 상태 초기화
+                self.after(0, lambda: self.status_bar.set_ready("준비됨"))
                 
         except Exception as e:
             print(f"[Error] 취소 처리 중 오류 발생: {e}")

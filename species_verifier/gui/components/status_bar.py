@@ -93,6 +93,27 @@ class StatusBar(BaseTkComponent):
             message: 표시할 메시지
         """
         self.status_label.configure(text=message)
+        
+    def set_file_info(self, file_info: str):
+        """
+        파일 정보 설정
+        
+        Args:
+            file_info: 표시할 파일 정보 (파일명 및 항목 수)
+        """
+        # 파일 정보가 비어있으면 상태 레이블만 표시
+        if not file_info:
+            return
+            
+        # 파일 정보가 있으면 상태 레이블에 추가 표시
+        current_text = self.status_label.cget("text")
+        if " - " in current_text:
+            current_text = current_text.split(" - ")[0].strip()
+        
+        if file_info:
+            self.status_label.configure(text=f"{current_text} - {file_info}")
+        else:
+            self.status_label.configure(text=current_text)
     
     def set_progress(self, value: float, current_item: int = None, total_items: int = None):
         """

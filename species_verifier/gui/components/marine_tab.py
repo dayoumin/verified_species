@@ -367,9 +367,26 @@ class MarineTabFrame(BaseTabFrame):
     def set_selected_file(self, file_path: Optional[str]):
         """선택된 파일 설정"""
         if file_path:
-            self.file_entry_count = self._calculate_file_entries(file_path)
             self.file_path_var.set(file_path)
+            # 파일 항목 개수 계산
+            self._calculate_file_entries(file_path)
         else:
-            self.file_entry_count = 0
             self.file_path_var.set("")
-        self._update_input_count()
+            self.file_entry_count = 0
+            if hasattr(self, 'file_count_label') and self.file_count_label:
+                self.file_count_label.configure(text="")
+        
+        # 검증 버튼 상태 업데이트
+        self._update_verify_button_state()
+        
+    def reset_file_info(self):
+        """파일 정보 초기화 - 취소 시 호출됨"""
+        # 파일 경로 초기화
+        self.file_path_var.set("")
+        # 파일 항목 개수 초기화
+        self.file_entry_count = 0
+        # 파일 개수 레이블 초기화
+        if hasattr(self, 'file_count_label') and self.file_count_label:
+            self.file_count_label.configure(text="")
+        # 검증 버튼 상태 업데이트
+        self._update_verify_button_state()
