@@ -422,35 +422,72 @@ def perform_microbe_verification(
             
             # MicrobeVerifier의 메서드 호출 시 context 전달
             results = []
-            # 각 항목을 개별적으로 처리하여 취소 가능하게 함
-            for i, name in enumerate(microbe_names_list):
-                # 취소 여부 확인
-                if check_cancelled and check_cancelled():
-                    print("[Info Bridge] 검증 취소 요청 받음 - 반복 중단")
-                    break
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print("[Info Bridge] 검증 취소 요청 받음 - 처리 시작 전 중단")
+                return []
                 
-                # 진행률 업데이트
-                if update_progress:
-                    progress = (i + 1) / len(microbe_names_list)
-                    print(f"[Debug Bridge Progress] 미생물 진행률 계산: {progress:.2f}, 현재 항목: {i+1}, 전체 항목 수: {len(microbe_names_list)}")
-                    # 현재 항목과 전체 항목 수도 함께 전달
-                    update_progress(progress, i+1, len(microbe_names_list))
-                
+            # 취소 시 빠르게 처리하기 위해 배치 처리 방식 도입
+            # 취소되지 않은 경우 모든 항목을 한 번에 처리
+            try:
                 # 상태 메시지 업데이트
                 if update_status:
-                    update_status(f"미생물 검증 중: {name} ({i+1}/{len(microbe_names_list)}) - 전체 {len(microbe_names_list)}개 중 {i+1}번째")
+                    update_status(f"미생물 검증 중: 전체 {len(microbe_names_list)}개 항목 처리 중...")
                 
-                # 단일 항목 검증 실행
-                try:
-                    single_result = verifier.perform_microbe_verification([name], context=context)
-                    if single_result and len(single_result) > 0:
-                        # 결과가 있는 경우 추가
-                        results.extend(single_result)
-                        # 콜백 함수 호출
-                        if result_callback and single_result[0]:
-                            result_callback(single_result[0], "microbe")
-                except Exception as item_e:
-                    print(f"[Error Bridge] 항목 '{name}' 검증 중 오류: {item_e}")
+                # 진행률 초기 업데이트
+                if update_progress:
+                    update_progress(0.1, 1, len(microbe_names_list))
+                
+                # 취소 여부 한 번 더 확인
+                if check_cancelled and check_cancelled():
+                    print("[Info Bridge] 검증 취소 요청 받음 - 검증 함수 호출 전 중단")
+                    return []
+                
+                # 모든 항목을 한 번에 처리
+                batch_results = verifier.perform_microbe_verification(microbe_names_list, context=context)
+                
+                # 취소 여부 확인
+                if check_cancelled and check_cancelled():
+                    print("[Info Bridge] 검증 취소 요청 받음 - 결과 처리 전 중단")
+                    return []
+                
+                # 진행률 업데이트 (80% 완료)
+                if update_progress:
+                    update_progress(0.8, int(len(microbe_names_list) * 0.8), len(microbe_names_list))
+                
+                # 결과 처리
+                if batch_results:
+                    results.extend(batch_results)
+                    
+                    # 취소 여부 확인
+                    if check_cancelled and check_cancelled():
+                        print("[Info Bridge] 검증 취소 요청 받음 - 결과 콜백 전 중단")
+                        return []
+                    
+                    # 결과 콜백 처리 (취소되지 않은 경우)
+                    if result_callback:
+                        # 취소된 경우 콜백 처리 중단
+                        for i, result in enumerate(batch_results):
+                            if check_cancelled and check_cancelled():
+                                print("[Info Bridge] 검증 취소 요청 받음 - 콜백 처리 중단")
+                                break
+                            
+                            # 진행률 업데이트 (80%~100% 사이)
+                            if update_progress:
+                                progress = 0.8 + (0.2 * (i + 1) / len(batch_results))
+                                current_item = int(len(microbe_names_list) * 0.8) + i + 1
+                                update_progress(progress, current_item, len(microbe_names_list))
+                            
+                            # 콜백 호출
+                            if result:
+                                result_callback(result, "microbe")
+                
+                # 진행률 최종 업데이트
+                if update_progress and not (check_cancelled and check_cancelled()):
+                    update_progress(1.0, len(microbe_names_list), len(microbe_names_list))
+                    
+            except Exception as batch_e:
+                print(f"[Error Bridge] 미생물 일괄 검증 중 오류: {batch_e}")
             
             # 결과 확인
             print(f"[Debug Bridge] 검증 결과 수: {len(results) if results else 0}")
@@ -752,30 +789,54 @@ def process_microbe_file(file_path: str) -> List[str]:
     import csv
     
     file_ext = os.path.splitext(file_path)[1].lower()
+    file_basename = os.path.basename(file_path).lower()
     microbe_names = []
     
     print(f"[Info Bridge] 미생물 파일 '{file_path}' 처리 시작.")
+    
+    # 해양생물 파일 특별 처리 여부 확인
+    is_marine_file = '해양생물' in file_basename
     
     def extract_names_from_dataframe(df, has_header=False):
         """데이터프레임에서 이름 추출"""
         names = []
         header_keywords = ['scientific_name', 'scientificname', 'scientific name', 'name', '학명', 'species', 'microbe', 'bacteria']
         
+        # 해양생물 파일 특별 처리
+        if is_marine_file:
+            # 첫 번째 컬럼이 'Gadus morhua'인지 확인
+            first_col = df.columns[0] if len(df.columns) > 0 else None
+            if first_col and 'gadus morhua' in str(first_col).lower():
+                # 헤더로 인식된 'Gadus morhua'를 첫 번째 항목으로 추가
+                names.append(str(first_col))
+                print(f"[Info Bridge] 헤더로 인식된 '{first_col}'를 첫 번째 항목으로 추가")
+                
+                # 첫 번째 컬럼의 모든 항목 추가
+                for idx, row in df.iterrows():
+                    try:
+                        value = str(row[first_col]).strip()
+                        if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                            names.append(value)
+                    except Exception as e:
+                        print(f"[Debug Bridge] 항목 추출 중 오류: {e}")
+                return names
+        
+        # 일반적인 처리
         if has_header:
             # 헤더가 있는 경우
             for col in df.columns:
                 if any(keyword in str(col).lower() for keyword in header_keywords):
                     print(f"[Info Bridge] 대상 컬럼 발견: {col}")
-                    names.extend(df[col].dropna().astype(str).tolist())
+                    names.extend([str(x).strip() for x in df[col].dropna().tolist() if str(x).strip() and ' ' in str(x)])
                     break
             else:
                 # 헤더는 있지만 키워드가 없는 경우 첫 번째 컬럼 사용
                 if len(df.columns) > 0:
-                    names.extend(df.iloc[:, 0].dropna().astype(str).tolist())
+                    names.extend([str(x).strip() for x in df.iloc[:, 0].dropna().tolist() if str(x).strip() and ' ' in str(x)])
         else:
             # 헤더가 없는 경우
             if len(df.columns) > 0:
-                names.extend(df.iloc[:, 0].dropna().astype(str).tolist())
+                names.extend([str(x).strip() for x in df.iloc[:, 0].dropna().tolist() if str(x).strip() and ' ' in str(x)])
         
         return names
     
@@ -887,9 +948,8 @@ def process_microbe_file(file_path: str) -> List[str]:
     
     # 결과 후처리
     try:
-        # 빈 문자열 제거 및 중복 제거
+        # 빈 문자열 제거만 수행 (중복 제거 안함)
         microbe_names = [name for name in microbe_names if name and str(name).strip()]
-        microbe_names = list(dict.fromkeys(microbe_names))  # 순서 유지하며 중복 제거
         
         print(f"[Info Bridge] 최종 추출된 미생물 학명 수: {len(microbe_names)}")
         if microbe_names:

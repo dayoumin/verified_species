@@ -287,3 +287,11 @@ class ColTabFrame(BaseTabFrame):
         else:
             self.file_entry_count = 0
         self._update_input_count()
+        
+    def reset_file_info(self):
+        """취소 시 파일 정보 초기화"""
+        # 파일 경로와 개수 초기화
+        self.file_path_var.set("")
+        self.file_entry_count = 0
+        self._update_input_count()
+        print("[Debug Col] 전체생물 탭 파일 정보 초기화 완료")

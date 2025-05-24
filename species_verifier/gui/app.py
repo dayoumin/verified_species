@@ -922,18 +922,49 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _process_microbe_file(self, file_path: str):
         """미생물 파일 처리"""
-        # 브릿지 모듈의 함수 호출
-        names_list = process_microbe_file(file_path)
-        
-        if names_list:
-            # 파일 경로를 context로 전달하며 검증 스레드 시작
-            self._start_microbe_verification_thread(names_list, context=file_path) 
-        else:
+        # 이미 검증 중인지 확인
+        if self.is_verifying:
+            print("[Warning] 이미 검증 작업이 진행 중입니다.")
             self.after(0, lambda: self.show_centered_message(
-                "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
+                "warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요."
+            ))
+            return
+            
+        # 취소 상태 초기화
+        self.is_cancelled = False
+        
+        # 검증 중 플래그 설정
+        self.is_verifying = True
+        
+        try:
+            # 브릿지 모듈의 함수 호출
+            names_list = process_microbe_file(file_path)
+            
+            # 취소 여부 확인
+            if self.is_cancelled:
+                print("[Info] 미생물 파일 처리 중 취소 요청 받음")
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                return
+            
+            if names_list:
+                # 파일 경로를 context로 전달하며 검증 스레드 시작
+                self._start_microbe_verification_thread(names_list, context=file_path) 
+            else:
+                self.after(0, lambda: self.show_centered_message(
+                    "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
+                ))
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+        except Exception as e:
+            print(f"[Error] 미생물 파일 처리 중 오류 발생: {e}")
+            self.after(0, lambda: self.show_centered_message(
+                "error", "파일 처리 오류", f"파일 처리 중 오류가 발생했습니다: {e}"
             ))
             self.after(0, lambda: self._reset_status_ui())
             self.after(0, lambda: self._set_ui_state("normal"))
+            # 검증 중 플래그 해제
+            self.is_verifying = False
     
     def _update_results_display(self, results_list: List[Dict[str, Any]], tab_name: str = None, clear_first: bool = False):
         """결과 표시 업데이트 (전체 리스트 업데이트용 - 큐 처리와 별개)"""
