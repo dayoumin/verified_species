@@ -1109,57 +1109,63 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def _cancel_operation(self):
         """작업 취소 - 모든 취소 기능을 이 메서드로 통합"""
-        # 취소 플래그 설정 및 UI 복원
-        self.is_cancelled = True  # 취소 플래그 설정
-        print("[Debug] 작업 취소 요청됨")
-        
-        # 취소 버튼 비활성화 (연속 클릭 방지)
-        if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'cancel_button'):
-            self.status_bar.cancel_button.configure(state="disabled")
-            self.status_bar.set_status("검증 취소 중...")
-        
-        # 결과 큐 초기화 (추가) - 경쟁 상태를 예방하기 위해 주의해야 함
+        # 이미 취소 중인 경우 중복 실행 방지
+        if getattr(self, '_is_cancelling', False):
+            return
+            
         try:
-            # 큐 비우기 - 모든 대기 중인 결과 제거
-            while not self.result_queue.empty():
-                try:
-                    self.result_queue.get_nowait()
-                    self.result_queue.task_done()
-                except Exception as e:
-                    print(f"[Warning] 취소 중 큐 비우기 오류: {e}")
-                    break
-            print(f"[Debug] 결과 큐 초기화 완료")
-        except Exception as clear_e:
-            print(f"[Error] 결과 큐 초기화 실패: {clear_e}")
-        
-        # 스레드 중단 표시
-        print("[Debug] 스레드 중단 요청 중 - 처리는 뒤에 자동 완료됩니다")
-        
-        # 전체 항목 수 표시 업데이트
-        if hasattr(self, 'total_verification_items'):
-            processed_items = 0  # 취소되어 완료된 항목은 없음
-            # 진행률 0으로 초기화 (현재 항목과 전체 항목 수 전달)
-            self.update_progress(0.0, 0, self.total_verification_items)
-            self._update_progress_label(f"작업이 취소되었습니다.")
-        else:
-            # 전체 항목 수를 알 수 없는 경우
-            self.update_progress(0.0)  # 진행률만 0으로 초기화
-            self._update_progress_label("작업이 취소되었습니다.")
-        
-        # UI 상태 즉시 초기화
-        self._set_ui_state("idle")
-        print("[Debug] UI 상태가 초기화되었습니다.")
-        if hasattr(self, '_reset_status_ui'):
-            # 연속 호출 시 오류 방지를 위해 after 메소드 사용
-            self.after(0, lambda: self._reset_status_ui())
-            self.after(10, lambda: self._set_ui_state("normal"))
-        
-        # 검증 중 플래그 해제 - 다른 검증 시작 허용
-        self.is_verifying = False
-        
-        # 전체 항목 수 변수 초기화
-        if hasattr(self, 'total_verification_items'):
-            delattr(self, 'total_verification_items')
+            self._is_cancelling = True
+            # 취소 플래그 설정 및 UI 복원
+            self.is_cancelled = True  # 취소 플래그 설정
+            print("[Debug] 작업 취소 요청됨")
+            
+            # 취소 버튼 비활성화 (연속 클릭 방지)
+            if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'cancel_button'):
+                self.status_bar.cancel_button.configure(state="disabled")
+                self.status_bar.set_status("검증 취소 중...")
+            
+            # 결과 큐 초기화 - 경쟁 상태를 예방하기 위해 주의해야 함
+            try:
+                while not self.result_queue.empty():
+                    try:
+                        self.result_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                print("[Debug] 결과 큐 초기화 완료")
+            except Exception as e:
+                print(f"[Error] 결과 큐 초기화 중 오류: {e}")
+            
+            # 스레드 중단을 위한 플래그 설정
+            self.is_verifying = False
+            
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_ui_state())
+            
+            # 상태 메시지 업데이트
+            if hasattr(self, 'status_bar'):
+                self.status_bar.set_status("작업이 취소되었습니다.")
+            
+            # UI 상태 즉시 초기화
+            self.after(0, lambda: self._set_ui_state("idle"))
+            print("[Debug] UI 상태가 초기화되었습니다.")
+            
+            # 검증 중 플래그 해제 - 다른 검증 시작 허용
+            self.is_verifying = False
+            
+            # 전체 항목 수 변수 초기화
+            if hasattr(self, 'total_verification_items'):
+                delattr(self, 'total_verification_items')
+                
+            # 진행률 초기화
+            if hasattr(self, 'status_bar'):
+                self.after(0, lambda: self.status_bar.set_progress(0, 0, 1))
+                
+        except Exception as e:
+            print(f"[Error] 취소 처리 중 오류 발생: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._is_cancelling = False
     
 
     def show_centered_message(self, msg_type: str, title: str, message: str):

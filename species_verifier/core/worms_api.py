@@ -163,8 +163,8 @@ def verify_single_species(scientific_name: str, check_cancelled: Optional[Callab
     
     # 취소 확인
     if check_cancelled and check_cancelled():
-        print(f"[Debug] 작업 취소 요청됨")
-        return {"error": "작업 취소됨"}
+        print(f"[Debug WoRMS] 단일 종 검증 작업 취소 요청됨 - 즉시 중단")
+        return {"error": "작업 취소됨", "status": "cancelled"}
         
     # WoRMS ID 조회
     aphia_id = get_aphia_id(scientific_name, check_cancelled)
@@ -231,10 +231,10 @@ def verify_species_list(species_list: List[str], check_cancelled: Optional[Calla
         
         # 취소 확인
         if check_cancelled and check_cancelled():
-            print(f"[Debug WoRMS] 작업 취소 요청됨 - 검증 반복 중단")
-            # 취소 정보를 결과에 추가
+            print(f"[Debug WoRMS] 작업 취소 요청됨 - 검증 즉시 중단")
+            # 취소 정보를 결과에 추가하고 즉시 반환
             results.append({"error": "작업 취소됨", "status": "cancelled"})
-            break
+            return results
             
         # 각 학명에 대한 기본 결과 사전 초기화
         result = {
@@ -251,10 +251,10 @@ def verify_species_list(species_list: List[str], check_cancelled: Optional[Calla
         
         # 취소 여부 다시 확인
         if check_cancelled and check_cancelled():
-            print(f"[Debug] 작업 취소 요청됨")
-            # 취소 정보를 결과에 추가
+            print(f"[Debug WoRMS] 작업 취소 요청 감지됨 - 검증 즉시 중단")
+            # 취소 정보를 결과에 추가하고 즉시 반환
             results.append({"error": "작업 취소됨", "status": "cancelled", "input_name": scientific_name})
-            break
+            return results
             
         # WoRMS ID 조회
         aphia_id = get_aphia_id(scientific_name, check_cancelled)
@@ -303,10 +303,10 @@ def verify_species_list(species_list: List[str], check_cancelled: Optional[Calla
         
         # API 응답 처리 후 취소 확인
         if check_cancelled and check_cancelled():
-            print(f"[Debug WoRMS] API 처리 후 취소 요청 감지됨")
-            # 취소 정보를 결과에 추가
+            print(f"[Debug WoRMS] API 처리 후 취소 요청 감지됨 - 검증 즉시 중단")
+            # 취소 정보를 결과에 추가하고 즉시 반환
             results.append({"error": "작업 취소됨", "status": "cancelled", "input_name": scientific_name})
-            break
+            return results
         
         # 결과 목록에 추가
         results.append(result)
