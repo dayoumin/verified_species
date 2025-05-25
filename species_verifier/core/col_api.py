@@ -1,8 +1,15 @@
 import requests
+from typing import Dict, Any
 
-def verify_col_species(scientific_name: str):
+def verify_col_species(scientific_name: str) -> Dict[str, Any]:
     """
     COL 글로벌 API를 이용해 학명 검증 결과를 반환합니다.
+    
+    Args:
+        scientific_name (str): 검증할 학명
+        
+    Returns:
+        Dict[str, Any]: 검증 결과를 담은 딕셔너리
     """
     url = "https://api.catalogueoflife.org/nameusage/search"
     params = {"q": scientific_name, "limit": 1}
@@ -10,8 +17,52 @@ def verify_col_species(scientific_name: str):
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        if data.get("result"):
+        
+        # 결과가 있는지 확인
+        if data.get("result") and len(data["result"]) > 0:
             match = data["result"][0]
+            
+            # 검색어와 결과가 너무 다른 경우 매칭 실패로 처리
+            # 입력된 학명을 소문자로 변환하여 비교
+            input_name_lower = scientific_name.lower()
+            
+            # 결과에서 학명 추출
+            usage = match.get("usage", {})
+            name_info = usage.get("name", {})
+            result_name = name_info.get("scientificName", "")
+            if not result_name:
+                result_name = match.get("scientificName", "")
+                
+            # 결과 학명도 소문자로 변환
+            result_name_lower = result_name.lower() if result_name else ""
+            
+            # 입력 학명의 단어들이 결과 학명에 포함되어 있는지 확인
+            # 입력 학명을 단어로 분리
+            input_words = [word.strip() for word in input_name_lower.split() if len(word.strip()) > 2]
+            
+            # 매칭 여부 확인 (입력 단어 중 하나라도 결과에 포함되어 있어야 함)
+            is_valid_match = False
+            if input_words:
+                for word in input_words:
+                    if word in result_name_lower:
+                        is_valid_match = True
+                        break
+            else:
+                # 입력 단어가 없는 경우 (짧은 단어만 있는 경우) 직접 비교
+                is_valid_match = input_name_lower in result_name_lower
+                
+            # 매칭이 유효하지 않은 경우 결과가 없는 것으로 처리
+            if not is_valid_match:
+                return {
+                    "query": scientific_name,
+                    "matched": False,
+                    "학명": scientific_name,
+                    "검증": "Unknown",
+                    "COL 상태": "유효하지 않은 학명",
+                    "COL ID": "-",
+                    "COL URL": "-",
+                    "심층분석 결과": "-"
+                }
             
             # usage -> name -> scientificName 경로 시도
             usage = match.get("usage", {})

@@ -276,12 +276,22 @@ class ResultTreeview(BaseResultView):
         else:
             display_summary = wiki_summary or '-'
         
-        # 태그 결정 (상태에 따라)
-        tag = 'verified' if is_verified else 'unverified'
-        if 'correct' in str(status).lower():
+        # 태그 결정 (상태에 따라) - 더 엄격한 검증 로직 적용
+        # 기본적으로 검증 실패로 간주
+        is_verified = False
+        tag = 'unverified'
+        
+        # 'correct name'이 포함된 경우에만 검증 성공으로 간주
+        if 'correct' in str(status).lower() and valid_name and valid_name != '-' and valid_name != '유효하지 않음':
+            is_verified = True
             tag = 'verified'
+        # 동의어인 경우 주의 표시
         elif 'synonym' in str(status).lower():
             tag = 'caution'
+        # 검증 실패 상태 확인
+        elif '검증 실패' in str(status) or '유효하지 않음' in str(valid_name) or '입력 오류' in str(status):
+            is_verified = False
+            tag = 'unverified'
             
         # 아이템 추가 (수정: display_name 사용)
         self.tree.insert("", insert_at_index, text=input_name, values=(
@@ -303,7 +313,6 @@ class ResultTreeview(BaseResultView):
         """
         input_name = result.get('input_name', '-') # COL API는 입력명을 반환하지 않으므로, 필요시 외부에서 추가 필요
         valid_name = result.get('학명', '-') # COL 결과 키에 맞게 수정
-        is_verified = result.get('검증', 'Unknown') != 'Unknown' # 검증 결과가 있는지 여부
         col_status = result.get('COL 상태', '-')
         col_id = result.get('COL ID', '-')
         col_url = result.get('COL URL', '-')
@@ -315,13 +324,29 @@ class ResultTreeview(BaseResultView):
         else:
             display_summary = wiki_summary or '-'
         
-        # 태그 결정 (COL 상태에 따라)
-        tag = 'verified' # 기본값
-        if col_status.lower() == 'accepted':
+        # 태그 결정 (COL 상태에 따라) - 더 엄격한 검증 로직 적용
+        # 기본적으로 검증 실패로 간주
+        is_verified = False
+        tag = 'unverified'
+        
+        # 검증 성공 조건 강화: 상태가 'accepted'이고 유효한 학명이 있는 경우에만 검증 성공으로 간주
+        if (col_status.lower() == 'accepted' and 
+            valid_name and valid_name != '-' and 
+            result.get('matched', False) and 
+            col_id and col_id != '-'):
+            is_verified = True
             tag = 'verified'
+        # 동의어인 경우 주의 표시
         elif 'synonym' in col_status.lower() or 'ambiguous' in col_status.lower():
             tag = 'caution'
-        elif not is_verified or col_status == '-': # 검증 안됐거나 정보 없을 때
+            is_verified = False
+        # 검증 실패 상태 확인 - 더 명확한 조건 추가
+        elif (col_status == '-' or 
+              col_status.lower() == 'unknown' or 
+              not result.get('matched', False) or 
+              not valid_name or 
+              valid_name == '-'):
+            is_verified = False
             tag = 'unverified'
         
         # 아이템 추가

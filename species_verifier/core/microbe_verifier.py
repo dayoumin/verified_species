@@ -42,11 +42,16 @@ class MicrobeVerifier:
     def create_basic_result(self, input_name: str, valid_name: str = '-', status: str = '정보 없음', 
                               taxonomy: str = '-', link: str = '-', wiki_summary: str = '정보 없음', 
                               is_microbe: bool = False) -> Dict[str, Any]:
-        """기본 결과 딕셔너리 생성 (한 줄로 수정)"""
+        """기본 결과 딕셔너리 생성"""
+        # 학명이 유효하지 않거나 검증 실패 상태인 경우 is_verified를 False로 설정
+        is_verified = False
+        if valid_name and valid_name != '-' and valid_name != '유효하지 않음' and 'correct' in status.lower():
+            is_verified = True
+            
         return {
             'input_name': input_name,
             'valid_name': valid_name,
-            'is_verified': 'valid' in status.lower(),
+            'is_verified': is_verified,
             'status': status,
             'taxonomy': taxonomy,
             'lpsn_link': link,

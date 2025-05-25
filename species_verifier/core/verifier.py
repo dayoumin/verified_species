@@ -316,9 +316,9 @@ def verify_single_microbe_lpsn(microbe_name):
         base_result = {
             'input_name': microbe_name,
             'scientific_name': cleaned_name if cleaned_name else microbe_name,
-            'is_verified': False,
-            'valid_name': '-',
-            'status': '시작 전',
+            'is_verified': False,  # 기본값은 검증 실패
+            'valid_name': '유효하지 않음',  # 기본값은 유효하지 않음
+            'status': '검증 실패',  # 기본 상태는 검증 실패
             'taxonomy': '-',
             'lpsn_link': direct_detail_url, # 기본 링크를 예상 상세 URL로 설정
             'wiki_summary': '-',
@@ -350,6 +350,11 @@ def verify_single_microbe_lpsn(microbe_name):
 
         except requests.exceptions.RequestException as direct_err:
             print(f"[Warning LPSN Core] 직접 상세 URL 접속 실패 ({direct_err}). Fallback 검색 시도...")
+            # 직접 URL 접속 실패 시 검증 실패로 처리
+            base_result['is_verified'] = False
+            base_result['status'] = 'LPSN 검색 실패'
+            base_result['valid_name'] = '유효하지 않음'
+            
             # 2. Fallback: 검색 URL로 접속하여 링크 찾기
             try:
                 print(f"[Info LPSN Core] Fallback 검색 URL 요청: {search_url}")
@@ -370,6 +375,10 @@ def verify_single_microbe_lpsn(microbe_name):
                           if link and cleaned_name.lower() in link.get_text(strip=True).lower():
                                species_link_tag = link
                                print(f"[Info LPSN Core] Fallback 검색 결과에서 상세 링크 찾음: {species_link_tag['href']}")
+                               # 링크를 찾았으므로 검증 성공으로 재설정
+                               base_result['is_verified'] = True
+                               base_result['status'] = '검증 성공'
+                               base_result['valid_name'] = cleaned_name
 
                 if species_link_tag:
                     # 상세 페이지 다시 요청
@@ -428,23 +437,37 @@ def verify_single_microbe_lpsn(microbe_name):
             processed_status = str(taxonomic_status).lower().strip().strip('"')
             print(f"[Debug] 비교 대상 processed_status: '{processed_status}'")
             if processed_status == 'correct name':
-                base_result['is_verified'] = True
+                # LPSN에서 학명을 찾은 경우에만 검증 성공으로 처리
                 title_tag = detail_soup.find('h1', class_='title')
                 if title_tag and title_tag.find('strong'):
                      valid_name_from_title = title_tag.strong.get_text(separator=" ", strip=True)
                      if valid_name_from_title:
+                          base_result['is_verified'] = True  # 유효한 학명을 찾은 경우에만 검증 성공
                           base_result['valid_name'] = valid_name_from_title
                           base_result['scientific_name'] = valid_name_from_title
                           print(f"[Info LPSN Core] 제목에서 유효 학명 추출: {valid_name_from_title}")
                      else:
-                          base_result['valid_name'] = cleaned_name
+                          base_result['is_verified'] = False
+                          base_result['valid_name'] = '유효하지 않음'
+                          base_result['status'] = '학명 검증 실패'
                 else:
-                     base_result['valid_name'] = cleaned_name
+                     base_result['is_verified'] = False
+                     base_result['valid_name'] = '유효하지 않음'
+                     base_result['status'] = '학명 검증 실패'
+            else:
+                # 'correct name'이 아닌 경우 항상 검증 실패로 처리
+                base_result['is_verified'] = False
+                base_result['valid_name'] = '유효하지 않음'
+                base_result['status'] = f'학명 검증 실패 (상태: {processed_status})'
             
             if not base_result.get('taxonomy') or base_result['taxonomy'] == '-':
                 base_result['taxonomy'] = get_default_taxonomy(cleaned_name)
         else:
              print(f"[Warning LPSN Core] 최종 detail_soup 확보 실패. 상태: {base_result.get('status', '알수 없음')}")
+             # 상세 페이지를 가져오지 못한 경우에도 검증 실패로 처리
+             base_result['is_verified'] = False
+             base_result['valid_name'] = '유효하지 않음'
+             base_result['status'] = '학명 검증 실패 (페이지 로드 실패)'
              base_result['taxonomy'] = get_default_taxonomy(cleaned_name)
              base_result['lpsn_link'] = species_detail_url # 실패 시에도 URL은 유지 시도
              

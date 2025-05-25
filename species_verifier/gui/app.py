@@ -285,7 +285,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self,
             height=30,
             font=self.default_font,
-            save_command=self.export_results_to_excel # 저장 명령 연결
+            save_command=self._export_active_tab_results # 현재 탭 결과 저장 명령 연결
         )
         self.status_bar.widget.grid(row=2, column=0, padx=10, pady=(5, 5), sticky="nsew")
         self.status_bar.set_cancel_command(self._cancel_operation) # 취소 명령 설정
@@ -1612,6 +1612,27 @@ class SpeciesVerifierApp(ctk.CTk):
                  self.show_centered_message("error", "복사 실패", error_msg)
 
 
+    def _export_active_tab_results(self):
+        """현재 활성화된 탭의 결과를 Excel 파일로 저장합니다."""
+        # 현재 탭 이름 가져오기
+        current_tab_name = self.tab_view.get()
+        
+        # 탭 이름에 따라 tree_type 결정
+        tree_type = None
+        if current_tab_name == "해양생물 (WoRMS)":
+            tree_type = "marine"
+        elif current_tab_name == "미생물 (LPSN)":
+            tree_type = "microbe"
+        elif current_tab_name == "통합생물 (COL)":
+            tree_type = "col"
+        
+        # 해당 탭 유형이 확인되면 export_results_to_excel 호출
+        if tree_type:
+            self.export_results_to_excel(tree_type)
+        else:
+            print(f"[Error] Unknown tab type for export: {current_tab_name}")
+            self.show_centered_message("error", "저장 오류", "알 수 없는 탭 유형입니다.")
+    
     def export_results_to_excel(self, tree_type: str):
         """지정된 탭의 결과를 Excel 파일로 저장합니다."""
         results_to_export = None
