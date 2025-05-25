@@ -393,7 +393,39 @@ class SpeciesVerifierApp(ctk.CTk):
         # 파일 처리 스레드 시작
         threading.Thread(target=self._process_col_file, args=(file_path,), daemon=True).start()
 
+    def _setup_cancel_button(self):
+        """취소 버튼 설정"""
+        # 취소 플래그 초기화
+        self.is_cancelled = False
+        
+        # 취소 버튼 활성화 및 기능 설정
+        if hasattr(self.status_bar, 'cancel_button'):
+            self.status_bar.cancel_button.configure(state="normal")
+            self.status_bar.set_cancel_command(self._cancel_operation)
+        print("[Debug App] 취소 버튼 활성화 및 기능 설정 완료")
+    
     def _start_col_verification_thread(self, verification_list):
+        # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
+        self.current_file_item_count = 0
+        self.marine_file_item_count = 0
+        self.microbe_file_item_count = 0
+        
+        # 검증 중 플래그 설정
+        self.is_verifying = True
+        
+        # 전체 항목 수 저장 (진행률 표시용)
+        self.total_verification_items = len(verification_list)
+        # COL 탭용 별도 변수에도 저장
+        self.col_total_items = len(verification_list)
+        
+        # 다른 탭 변수 초기화
+        self.marine_total_items = 0
+        self.microbe_total_items = 0
+        
+        # 진행 UI 표시 (취소 버튼 활성화 포함)
+        self._show_progress_ui("COL 검증 준비 중...")
+        self._set_ui_state("disabled")  # UI 비활성화
+        
         # COL 글로벌 API를 이용한 검증 스레드 시작
         import threading
         thread = threading.Thread(target=self._perform_col_verification, args=(verification_list,))
@@ -774,6 +806,21 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 공통 유틸리티 함수 ---
     
     def _start_verification_thread(self, verification_list):
+        # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
+        self.current_file_item_count = 0
+        self.marine_file_item_count = 0
+        self.microbe_file_item_count = 0
+        self.col_file_item_count = 0
+        
+        # 전체 항목 수 초기화
+        self.total_verification_items = 0
+        
+        # 해양생물 탭 항목 수 설정
+        self.marine_total_items = len(verification_list)
+        # 다른 탭 변수 초기화
+        self.microbe_total_items = 0
+        self.col_total_items = 0
+        
         # 진행 UI 표시
         self._show_progress_ui("검증 준비 중...")
         self._set_ui_state("disabled")
@@ -804,11 +851,16 @@ class SpeciesVerifierApp(ctk.CTk):
             def check_cancelled():
                 return self.is_cancelled
             
-            # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
+            # 전체 항목 수 확인 (취소 시 UI 복원에 사용)
             total_items = len(verification_list_input)
-            self.total_verification_items = total_items
-            # 해양생물 탭용 별도 변수에도 저장
-            self.marine_total_items = total_items
+            
+            # 이미 설정되지 않은 경우에만 설정
+            if not hasattr(self, 'total_verification_items') or self.total_verification_items == 0:
+                self.total_verification_items = total_items
+                
+            # 해양생물 탭용 별도 변수에도 저장 (이미 설정되지 않은 경우에만)
+            if not hasattr(self, 'marine_total_items') or self.marine_total_items == 0:
+                self.marine_total_items = total_items
             
             # 진행 상태 디버깅을 위한 로그 추가
             print(f"[Debug Verification] 전체 항목 수 설정: {self.total_verification_items}")
@@ -904,12 +956,18 @@ class SpeciesVerifierApp(ctk.CTk):
                 print("[Debug Microbe] microbe_names_list가 비어 있습니다.")
             
             # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
-            # 결과 콜백 함수 정의 - 결과와 함께 'col' 탭 타입을 전달
-            def result_callback_wrapper(result):
+            # 결과 콜백 함수 정의 - 결과와 함께 'microbe' 탭 타입을 전달
+            def result_callback_wrapper(result, *args):
+                # 로그 추가
+                print(f"[Debug] result_callback_wrapper 호출됨: 결과 키={list(result.keys()) if isinstance(result, dict) else 'None'}, 추가 인자={args}")
+                
                 if not self.is_cancelled:
-                    # 결과와 함께 'col' 탭 타입을 명시적으로 전달
-                    self.result_queue.put((result, 'col'))
-                    print(f"[Debug] 미생물 결과를 COL 탭에 추가: {result.get('input_name', '')}")                    
+                    # 결과와 함께 'microbe' 탭 타입을 명시적으로 전달
+                    self.result_queue.put((result, 'microbe'))
+                    print(f"[Debug] 미생물 결과를 미생물 탭에 추가: {result.get('input_name', '')}")
+                else:
+                    print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
+                                        
             
             results = perform_microbe_verification(
                 microbe_names_list,
@@ -1026,15 +1084,17 @@ class SpeciesVerifierApp(ctk.CTk):
         current_tab_name = self.tab_view.get() # 현재 활성화된 탭 이름 가져오기
             
         # 결과를 적절한 Treeview에 표시
-        if current_tab_name == "":
+        print(f"[Debug] 현재 탭 이름: '{current_tab_name}'")
+        
+        if current_tab_name == "해양생물(WoRMS)":
             target_tree = self.result_tree_marine
             target_results_list = self.current_results_marine
-        elif current_tab_name == " (LPSN)":
+        elif current_tab_name == "미생물 (LPSN)":
             target_tree = self.result_tree_microbe
             target_results_list = self.current_results_microbe
-        # elif current_tab_name == " (COL)": # 제거: 큐를 통해 _update_single_result에서 처리됨
-            # target_tree = self.result_tree_col 
-            # target_results_list = self.current_results_col
+        elif current_tab_name == "담수 등 전체생물(COL)":
+            target_tree = self.result_tree_col 
+            target_results_list = self.current_results_col
         else:
             print(f"[Warning] _update_results_display called for unknown or unsupported tab: {current_tab_name}")
             return
@@ -1067,8 +1127,11 @@ class SpeciesVerifierApp(ctk.CTk):
         # 전체 항목 수 결정
         actual_total_items = total_items
         
+        # 전체 항목 수가 직접 전달된 경우 우선 사용
+        if total_items is not None and total_items > 0:
+            actual_total_items = total_items
         # 파일에서 추출한 항목 수 사용
-        if hasattr(self, 'current_file_item_count') and self.current_file_item_count is not None and self.current_file_item_count > 0:
+        elif hasattr(self, 'current_file_item_count') and self.current_file_item_count is not None and self.current_file_item_count > 0:
             actual_total_items = self.current_file_item_count
         # 전체 항목 수 사용
         elif hasattr(self, 'total_verification_items') and self.total_verification_items is not None:

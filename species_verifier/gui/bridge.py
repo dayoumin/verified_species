@@ -356,10 +356,12 @@ def perform_microbe_verification(
         try:
             # 수정: Verifier 인스턴스 생성 및 콜백 전달
             # 결과 콜백 함수를 래핑하여 탭 타입 정보 추가
-            def wrapped_result_callback(result):
+            def wrapped_result_callback(result, *args):
+                # 로그 추가
+                print(f"[Debug Bridge] wrapped_result_callback 호출됨: 결과 키={list(result.keys()) if isinstance(result, dict) else 'None'}, 추가 인자={args}")
                 if result_callback:
-                    # 결과와 함께 'col' 탭 타입 전달 (미생물 결과는 COL 탭에 표시)
-                    result_callback(result, 'col')
+                    # 결과와 함께 'microbe' 탭 타입 전달 (미생물 결과는 미생물 탭에 표시)
+                    result_callback(result, 'microbe')
                     
             verifier = MicrobeVerifier(
                 progress_callback=update_progress,

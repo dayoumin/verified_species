@@ -34,8 +34,8 @@ class StatusBar(BaseTkComponent):
         
         # 상태바 레이아웃 설정
         self.widget.grid_columnconfigure(0, weight=1)  # 상태 메시지 (확장)
-        self.widget.grid_columnconfigure(1, weight=0)  # 진행률 텍스트
-        self.widget.grid_columnconfigure(2, weight=0)  # 진행바
+        self.widget.grid_columnconfigure(1, weight=0)  # 진행바
+        self.widget.grid_columnconfigure(2, weight=0)  # 진행률 텍스트
         self.widget.grid_columnconfigure(3, weight=0)  # 저장 버튼
         self.widget.grid_columnconfigure(4, weight=0)  # 취소 버튼
 
@@ -135,8 +135,8 @@ class StatusBar(BaseTkComponent):
         self.progressbar.configure(mode="determinate")
         self.progressbar.set(value)
         
-        # 진행바 표시
-        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        # 진행바 표시 (상태 메시지 뒤에 바로 표시)
+        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
         
         # 현재 항목과 전체 항목 수가 있는 경우 텍스트 표시
         if current_item is not None and total_items is not None and total_items > 0:
@@ -147,8 +147,8 @@ class StatusBar(BaseTkComponent):
             percentage = int(value * 100)
             self.progress_text_label.configure(text=f"{percentage}%")
         
-        # 진행률 텍스트 표시
-        self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        # 진행률 텍스트 표시 (진행바 뒤에 표시)
+        self.progress_text_label.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
     
     def set_busy(self, status_text: Optional[str] = None):
         """바쁨 상태로 설정 (진행바, 취소 버튼 표시)"""
@@ -165,10 +165,10 @@ class StatusBar(BaseTkComponent):
         
         # 진행률 텍스트 초기화 및 표시
         self.progress_text_label.configure(text="0%")
-        self.progress_text_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        self.progress_text_label.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
 
         # 진행바 표시 및 설정
-        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
         self.progressbar.configure(mode="indeterminate")
         self.progressbar.start()
 
