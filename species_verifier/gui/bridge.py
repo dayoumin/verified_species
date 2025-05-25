@@ -463,11 +463,36 @@ def process_file(file_path, korean_mode=False):
                 df_sample = pd.read_excel(file_path, nrows=5)
                 print(f"[Info Bridge] 헤더 식별됨: '{df_sample.columns[0]}'")
                 
-                # 헤더가 있는 것으로 간주
-                print(f"[Info Bridge] 파일에 헤더가 있습니다. header=0으로 로드합니다.")
-                df = pd.read_excel(file_path)
-                print(f"[Debug Bridge] DataFrame 로드 성공. 컬럼: {list(df.columns)}")
-                print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
+                # Excel 파일인 경우
+                if file_extension in ['.xlsx', '.xls']:
+                    try:
+                        # 미생물 파일인 경우 header=None으로 읽어서 첫 번째 행도 데이터로 처리
+                        file_basename = os.path.basename(file_path).lower()
+                        is_microbe_file = '미생물' in file_basename
+                        if is_microbe_file:
+                            df = pd.read_excel(file_path, header=None)
+                            print(f"[Debug Bridge] 미생물 파일은 header=None으로 로드함. 콜럼: {list(df.columns)}")
+                            print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
+                            has_header = False  # 헤더가 없는 것으로 처리
+                            print(f"[Info Bridge] 미생물 파일은 헤더 없이 처리합니다.")
+                        else:
+                            df = pd.read_excel(file_path)
+                            print(f"[Debug Bridge] DataFrame 로드 성공. 콜럼: {list(df.columns)}")
+                            print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
+                            has_header = True  # 기본적으로 헤더가 있다고 가정
+                            print(f"[Info Bridge] Excel 파일에 헤더가 있습니다.")
+                    except Exception as e:
+                        print(f"[Error Bridge] 엑셀 파일 처리 중 오류: {e}")
+                        # 헤더 없이 다시 시도
+                        try:
+                            print(f"[Info Bridge] 헤더 없이 다시 시도합니다.")
+                            df = pd.read_excel(file_path, header=None)
+                            print(f"[Debug Bridge] 헤더 없이 DataFrame 행 수: {len(df)}")
+                            has_header = False  # 헤더가 없는 것으로 처리
+                            print(f"[Info Bridge] Excel 파일은 헤더 없이 처리합니다.")
+                        except Exception as inner_e:
+                            print(f"[Error Bridge] 헤더 없이 시도 중 오류: {inner_e}")
+                            raise RuntimeError(f"엑셀 파일 '{file_path}' 처리 실패")
                 
                 # 한글명 모드 처리
                 if korean_mode and len(df.columns) >= 2:
@@ -486,17 +511,57 @@ def process_file(file_path, korean_mode=False):
                     # 학명만 추출
                     print(f"[Info Bridge] 학명 모드로 처리합니다. 전체 {len(df)} 행의 데이터를 처리합니다.")
                     
-                    # 첫 번째 컬럼 정보 확인
+                    # 첫 번째 콜럼 정보 확인
                     first_col = df.columns[0]
                     if len(df) > 0:
                         sample_items = df[first_col].head(5).tolist()
-                        print(f"[Debug Bridge] 첫 번째 컬럼의 처음 5개 항목: {sample_items}")
+                        print(f"[Debug Bridge] 첫 번째 콜럼의 처음 5개 항목: {sample_items}")
                     
-                    # 해양생물.xlsx 파일 특별 처리
+                    # 미생물.xlsx 파일 특별 처리
                     file_basename = os.path.basename(file_path).lower()
-                    is_special_file = ('gadus morhua' in str(first_col).lower() or '해양생물' in file_basename)
+                    is_microbe_file = '미생물' in file_basename
+                    is_marine_file = ('gadus morhua' in str(first_col).lower() or '해양생물' in file_basename)
                     
-                    if is_special_file:
+                    # 미생물 파일인 경우 특별 처리
+                    if is_microbe_file:
+                        print(f"[Info Bridge] 미생물 파일 '{file_path}' 처리 시작.")
+                        print(f"[Info Bridge] 미생물.xlsx 파일 형식 감지, 특별 처리 적용")
+                        
+                        # 콜럼 이름을 포함하여 모든 항목 추출
+                        all_species = []
+                        
+                        # 첫 번째 콜럼 이름 처리
+                        first_col = df.columns[0]  # 첫 번째 콜럼 이름 가져오기
+                        first_col_name = str(first_col).strip()
+                        
+                        # 콜럼 이름이 미생물 학명인지 확인
+                        if first_col_name and ' ' in first_col_name and len(first_col_name) > 3 and first_col_name.lower() not in ['nan', 'none', '']:
+                            # 첫 번째 항목으로 콜럼 이름 추가 (예: Escherichia coli)
+                            all_species.append(first_col_name)
+                            print(f"[Debug Bridge] 콜럼 이름 추가: {first_col_name}")
+                        
+                        # 첫 번째 콜럼의 모든 행 처리
+                        for idx, row in df.iterrows():
+                            try:
+                                value = str(row[first_col]).strip()
+                                if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
+                                    # 중복 방지
+                                    if value not in all_species:
+                                        all_species.append(value)
+                                        print(f"[Debug Bridge] 항목 추가: {value}")
+                            except Exception as e:
+                                print(f"[Debug Bridge] 항목 추출 중 오류: {e}")
+                                continue
+                        
+                        print(f"[Debug Bridge] 추출된 전체 미생물 수: {len(all_species)}")
+                        
+                        # 결과에 추가 - 모든 항목 유지
+                        results = all_species
+                        print(f"[Debug Bridge] 최종 추출된 미생물 학명 수: {len(results)}")
+                        print(f"[Debug Bridge] 추출된 학명 목록: {results}")
+                    
+                    # 해양생물 파일인 경우 특별 처리
+                    elif is_marine_file:
                         print(f"[Info Bridge] 해양생물.xlsx 파일 형식 감지, 특별 처리 적용")
                         
                         # 수정: 'Gadus morhua'를 헤더가 아닌 첫 번째 데이터로 처리
