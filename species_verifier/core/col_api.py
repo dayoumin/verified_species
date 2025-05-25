@@ -47,7 +47,7 @@ def verify_col_species(scientific_name: str):
                 "COL 상태": status,
                 "COL ID": col_id,
                 "COL URL": col_url,
-                "위키백과 요약": "-",
+                "심층분석 결과": "-",
                 "original_data": original_result # 수정된 원본 데이터
             }
             return display_result
@@ -61,7 +61,7 @@ def verify_col_species(scientific_name: str):
                 "COL 상태": "-",
                 "COL ID": "-",
                 "COL URL": "-",
-                "위키백과 요약": "-"
+                "심층분석 결과": "-"
             }
     except requests.exceptions.HTTPError as http_err:
         # HTTP 에러 처리
@@ -70,7 +70,7 @@ def verify_col_species(scientific_name: str):
         return {
             "query": scientific_name, "matched": False, "error": error_message,
             "학명": scientific_name, "검증": "Error", "COL 상태": f"오류: {error_message}",
-            "COL ID": "-", "COL URL": "-", "위키백과 요약": "-"
+            "COL ID": "-", "COL URL": "-", "심층분석 결과": "-"
         }
     except Exception as e:
         # 기타 에러 처리
@@ -78,5 +78,5 @@ def verify_col_species(scientific_name: str):
         return {
             "query": scientific_name, "matched": False, "error": str(e),
             "학명": scientific_name, "검증": "Error", "COL 상태": f"오류: {str(e)}",
-            "COL ID": "-", "COL URL": "-", "위키백과 요약": "-"
+            "COL ID": "-", "COL URL": "-", "심층분석 결과": "-"
         } 

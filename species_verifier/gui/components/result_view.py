@@ -78,7 +78,7 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("worms_status", text="WoRMS 상태")
             self.tree.heading("worms_id", text="WoRMS ID")
             self.tree.heading("worms_url", text="WoRMS URL")
-            self.tree.heading("summary", text="위키백과 요약")
+            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
             self.tree.column("mapped_name", width=150, minwidth=100)
@@ -95,7 +95,7 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("status", text="상태")
             self.tree.heading("taxonomy", text="분류")
             self.tree.heading("link", text="LPSN 링크")
-            self.tree.heading("summary", text="위키백과 요약")
+            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
             self.tree.column("valid_name", width=150, minwidth=100)
@@ -112,7 +112,7 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("col_status", text="COL 상태")
             self.tree.heading("col_id", text="COL ID")
             self.tree.heading("col_url", text="COL URL")
-            self.tree.heading("summary", text="위키백과 요약")
+            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
             self.tree.column("valid_name", width=150, minwidth=100)
@@ -307,7 +307,7 @@ class ResultTreeview(BaseResultView):
         col_status = result.get('COL 상태', '-')
         col_id = result.get('COL ID', '-')
         col_url = result.get('COL URL', '-')
-        wiki_summary = result.get('위키백과 요약', '-')
+        wiki_summary = result.get('심층분석 결과', '-')
         
         # 요약이 너무 길면 자르기
         if isinstance(wiki_summary, str) and len(wiki_summary) > 60:

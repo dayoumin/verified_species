@@ -23,7 +23,7 @@
 
 3.  **핵심 로직 분리 (`species_verifier/core`):**
     *   해양생물(`_perform_verification`), 미생물(`_perform_microbe_verification`) 검증 로직을 `core` 모듈 또는 하위 모듈로 분리합니다.
-    *   위키백과 요약(`_get_wiki_summary`) 로직을 분리합니다.
+    *   심층분석 결과(`_get_wiki_summary`) 로직을 분리합니다.
     *   데이터 정리 로직(`_clean_scientific_name`) 등을 유틸리티 함수로 분리 (`species_verifier/utils` 활용 고려).
 
 4.  **외부 서비스 연동 분리 (`species_verifier/services`):**

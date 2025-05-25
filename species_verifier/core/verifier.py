@@ -257,7 +257,7 @@ def verify_marine_species(verification_list_input):
                      wiki_search_term = input_name_for_result # 최후의 수단: 원본 학명 입력
 
                 if wiki_search_term:
-                    print(f"[Info Verifier Core] '{wiki_search_term}' 위키백과 요약 검색 시도")
+                    print(f"[Info Verifier Core] '{wiki_search_term}' 심층분석 결과 검색 시도")
                     result_entry['wiki_summary'] = get_wiki_summary(wiki_search_term) or '정보 없음'
                 else:
                     result_entry['wiki_summary'] = '정보 없음'
@@ -269,7 +269,7 @@ def verify_marine_species(verification_list_input):
                      result_entry['worms_status'] = 'N/A (학명 없음)'
                      # 국명으로 위키 검색 시도
                      if korean_name:
-                           print(f"[Info Verifier Core] '{korean_name}'(학명 없음) 위키백과 요약 검색 시도")
+                           print(f"[Info Verifier Core] '{korean_name}'(학명 없음) 심층분석 결과 검색 시도")
                            result_entry['wiki_summary'] = get_wiki_summary(korean_name) or '정보 없음'
                      else:
                            result_entry['wiki_summary'] = '정보 없음'
@@ -280,7 +280,7 @@ def verify_marine_species(verification_list_input):
                 # WoRMS 조회 실패 또는 결과 없음
                  result_entry['worms_status'] = result_entry.get('worms_status', 'WoRMS 결과 없음') # 오류 시 기존 상태 유지
                  # WoRMS 실패 시에도 위키 검색 시도 (입력 학명 기준)
-                 print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 위키백과 요약 검색 시도")
+                 print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 심층분석 결과 검색 시도")
                  result_entry['wiki_summary'] = get_wiki_summary(cleaned_scientific_name) or '정보 없음'
 
         results.append(result_entry)
@@ -448,10 +448,10 @@ def verify_single_microbe_lpsn(microbe_name):
              base_result['taxonomy'] = get_default_taxonomy(cleaned_name)
              base_result['lpsn_link'] = species_detail_url # 실패 시에도 URL은 유지 시도
              
-        # 위키백과 요약 검색
+        # 심층분석 결과 검색
         wiki_search_term = base_result.get('valid_name', cleaned_name)
         if wiki_search_term == '-': wiki_search_term = cleaned_name
-        print(f"[Info LPSN Core] '{wiki_search_term}' 위키백과 요약 검색 시도 (미생물)")
+        print(f"[Info LPSN Core] '{wiki_search_term}' 심층분석 결과 검색 시도 (미생물)")
         base_result['wiki_summary'] = get_wiki_summary(wiki_search_term) or '정보 없음'
 
         print(f"[Info LPSN Core] LPSN 검증 완료: '{microbe_name}' -> Status: {base_result['status']}")
@@ -502,7 +502,7 @@ def verify_col_species(col_names_list, result_callback=None):
             "COL 상태": "미구현",
             "COL ID": "-",
             "COL URL": "-",
-            "위키백과 요약": get_wiki_summary(name) if 'get_wiki_summary' in globals() else "-"
+            "심층분석 결과": get_wiki_summary(name) if 'get_wiki_summary' in globals() else "-"
         }
         if result_callback:
             result_callback(result)

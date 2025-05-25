@@ -20,7 +20,7 @@ def get_wiki_summary(search_term, check_cancelled=None):
         check_cancelled (callable, optional): 취소 여부를 확인하는 콜백 함수
     
     Returns:
-        str: 위키백과 요약 또는 오류 메시지
+        str: 심층분석 결과 또는 오류 메시지
     """
     if not search_term or search_term == '-':
         return "정보 없음"

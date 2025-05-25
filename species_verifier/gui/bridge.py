@@ -978,13 +978,13 @@ def process_microbe_file(file_path: str) -> List[str]:
 
 def get_wiki_summary(search_term: str) -> str:
     """
-    위키백과 요약 검색을 위한 브릿지 함수
+    심층분석 결과 검색을 위한 브릿지 함수
     
     Args:
         search_term: 검색어
         
     Returns:
-        위키백과 요약
+        심층분석 결과
     """
     if HAS_CORE_MODULES and get_wiki_summary:
         try:

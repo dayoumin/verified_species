@@ -204,7 +204,7 @@ class MarineSpeciesVerifier:
                                     break
                                     
                             except Exception as e:
-                                print(f"[Error Wiki] 위키백과 요약 가져오기 오류 ({name_for_wiki}): {e}")
+                                print(f"[Error Wiki] 심층분석 결과 가져오기 오류 ({name_for_wiki}): {e}")
                                 traceback.print_exc()
                                 result_entry['wiki_summary'] = f"위키 오류: {str(e)[:100]}"
                         else:

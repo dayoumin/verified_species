@@ -698,7 +698,7 @@ class SpeciesVerifierApp(ctk.CTk):
             elif column_id == "#5":  # WoRMS Link 컬럼 헤더
                 tooltip_text = "더블 클릭 시 WoRMS 웹사이트 확인"
             elif column_id == "#6":  # Wiki Summary 컬럼 헤더
-                tooltip_text = "더블 클릭 시 위키백과 요약 팝업창 확인"
+                tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
         elif region == "cell":
@@ -779,7 +779,7 @@ class SpeciesVerifierApp(ctk.CTk):
             elif column_id == "#5":  # LPSN Link 컬럼 헤더 (기존 #4)
                 tooltip_text = "더블 클릭 시 LPSN 웹사이트 확인"
             elif column_id == "#6":  # Wiki Summary 컬럼 헤더 (기존 #5)
-                tooltip_text = "더블 클릭 시 위키백과 요약 팝업창 확인"
+                tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
             # --- 수정 끝 ---
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
@@ -1358,7 +1358,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self.tooltip_window = None
             
     def _show_wiki_summary_popup(self, title: str, wiki_summary: str):
-        """위키백과 요약 내용을 팝업 창으로 표시합니다."""
+        """심층분석 결과 내용을 팝업 창으로 표시합니다."""
         import webbrowser
         
         popup = ctk.CTkToplevel(self)
@@ -1626,7 +1626,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), 
                 ("mapped_name", "학명"), ("verified", "검증"), ("worms_status", "WoRMS 상태"),
-                ("worms_id", "WoRMS ID"), ("worms_url", "WoRMS URL"), ("wiki_summary", "위키백과 요약")
+                ("worms_id", "WoRMS ID"), ("worms_url", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "marine_verification_results.xlsx"
         elif tree_type == "microbe":
@@ -1635,7 +1635,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), 
                 ("valid_name", "유효 학명"), ("verified", "검증"), ("status", "상태"), 
-                ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"), ("wiki_summary", "위키백과 요약")
+                ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "microbe_verification_results.xlsx"
         elif tree_type == "col":
@@ -1645,7 +1645,7 @@ class SpeciesVerifierApp(ctk.CTk):
                 ("input_name", "입력명"), 
                 ("valid_name", "학명"), ("verified", "검증"), 
                 ("col_status", "COL 상태"), ("col_id", "COL ID"), 
-                ("col_url", "COL URL"), ("wiki_summary", "위키백과 요약")
+                ("col_url", "COL URL"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "col_verification_results.xlsx"
         else:
@@ -1714,7 +1714,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), ("mapped_name", "학명"), ("verified", "검증"),
                 ("worms_status", "WoRMS 상태"), ("worms_id", "WoRMS ID"), 
-                ("worms_url", "WoRMS URL"), ("wiki_summary", "위키백과 요약")
+                ("worms_url", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
             ]
         elif tree_type == 'microbe':
             tree = self.result_tree_microbe.tree
@@ -1722,7 +1722,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), ("valid_name", "유효 학명"), ("verified", "검증"),
                 ("status", "상태"), ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"),
-                ("wiki_summary", "위키백과 요약")
+                ("wiki_summary", "심층분석 결과")
             ]
         elif tree_type == 'col':
             tree = self.result_tree_col.tree
@@ -1730,7 +1730,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), ("valid_name", "학명"), ("verified", "검증"), 
                 ("col_status", "COL 상태"), ("col_id", "COL ID"), 
-                ("col_url", "COL URL"), ("wiki_summary", "위키백과 요약")
+                ("col_url", "COL URL"), ("wiki_summary", "심층분석 결과")
             ]
         else:
             print(f"[Error] Unknown tree_type for copy: {tree_type}")
@@ -1919,7 +1919,7 @@ class SpeciesVerifierApp(ctk.CTk):
             header_tooltips = {
                 "#4": "더블 클릭 시 COL ID 복사됨", 
                 "#5": "더블 클릭 시 COL 웹사이트 확인", 
-                "#6": "더블 클릭 시 위키백과 요약 팝업창 확인" 
+                "#6": "더블 클릭 시 심층분석 결과 팝업창 확인" 
             }
             x, y = event.x, event.y
             region = tree.identify_region(x, y)

@@ -13,7 +13,7 @@ class BaseVerificationResult(BaseModel):
     input_name: str = Field(..., description="입력된 이름 (국명 또는 학명)")
     scientific_name: str = Field(..., description="학명")
     is_verified: bool = Field(default=False, description="검증 성공 여부")
-    wiki_summary: str = Field(default="-", description="위키백과 요약 정보")
+    wiki_summary: str = Field(default="-", description="심층분석 결과 정보")
     verification_date: datetime = Field(default_factory=datetime.now, description="검증 일시")
 
 

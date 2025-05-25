@@ -1121,7 +1121,7 @@ class SpeciesVerifierApp(ctk.CTk):
 
     # --- 헬퍼 함수: 위키 요약 팝업 (수정: 출처 표시 및 복사 버튼 추가) ---
     def _show_wiki_summary_popup(self, title, wiki_summary):
-        """위키백과 요약 내용을 팝업 창으로 표시하고 복사 기능을 제공합니다."""
+        """심층분석 결과 내용을 팝업 창으로 표시하고 복사 기능을 제공합니다."""
         popup = ctk.CTkToplevel(self)
         popup.title(f"종정보: {title}") # 제목 변경
         popup.geometry("800x600")  # 팝업 창 크기 키우기
@@ -1241,7 +1241,7 @@ class SpeciesVerifierApp(ctk.CTk):
                 elif column_id == "#5": # WoRMS Link 컬럼 헤더 ("WoRMS 링크(?)")
                     tooltip_text = "더블 클릭 시 WoRMS 웹사이트 확인"
                 elif column_id == "#6": # Wiki Summary 컬럼 헤더 ("종정보(?)")
-                    tooltip_text = "더블 클릭 시 위키백과 요약 팝업창 확인"
+                    tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
             # 미생물 탭 트리뷰인 경우 
             elif tree == self.result_tree_microbe:
                 if column_id == "#3": # Taxonomy 컬럼 헤더 ("분류 정보(?)")
@@ -1249,7 +1249,7 @@ class SpeciesVerifierApp(ctk.CTk):
                 elif column_id == "#4": # LPSN Link 컬럼 헤더 ("LPSN 링크(?)")
                     tooltip_text = "더블 클릭 시 LPSN 웹사이트 확인"
                 elif column_id == "#5": # Wiki Summary 컬럼 헤더 ("종정보(?)")
-                    tooltip_text = "더블 클릭 시 위키백과 요약 팝업창 확인"
+                    tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
         elif region == "cell":

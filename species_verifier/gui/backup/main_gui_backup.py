@@ -1123,7 +1123,7 @@ class SpeciesVerifierApp(ctk.CTk):
 
     # --- 헬퍼 함수: 위키 요약 팝업 (수정: 출처 표시 및 복사 버튼 추가) ---
     def _show_wiki_summary_popup(self, title, wiki_summary):
-        """위키백과 요약 내용을 팝업 창으로 표시하고 복사 기능을 제공합니다."""
+        """심층분석 결과 내용을 팝업 창으로 표시하고 복사 기능을 제공합니다."""
         popup = ctk.CTkToplevel(self)
         popup.title(f"종정보: {title}") # 제목 변경
         popup.geometry("700x550")  # 팝업 창 크기 조정 (버튼 공간 확보)
