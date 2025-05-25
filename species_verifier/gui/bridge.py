@@ -416,30 +416,9 @@ def perform_microbe_verification(
                     print(f"[Info Bridge] 배치 결과 개수: {len(batch_results)} / 전체 학명 수: {len(microbe_names_list)}")
                     results.extend(batch_results)
                     
-                    # 취소 여부 확인
-                    if check_cancelled and check_cancelled():
-                        print("[Info Bridge] 검증 취소 요청 받음 - 결과 콜백 전 중단")
-                        return []
-                    
-                    # 결과 콜백 처리 (취소되지 않은 경우)
-                    if result_callback:
-                        # 취소된 경우 콜백 처리 중단
-                        for i, result in enumerate(batch_results):
-                            if check_cancelled and check_cancelled():
-                                print("[Info Bridge] 검증 취소 요청 받음 - 콜백 처리 중단")
-                                break
-                            
-                            # 진행률 업데이트 (80%~100% 사이)
-                            if update_progress:
-                                progress = 0.8 + (0.2 * (i + 1) / len(batch_results))
-                                current_item = int(len(microbe_names_list) * 0.8) + i + 1
-                                update_progress(progress, current_item, len(microbe_names_list))
-                            
-                            # 콜백 호출
-                            if result:
-                                result_callback(result, "microbe")
+                    # 참고: 결과 콜백은 microbe_verifier.py에서 이미 처리되었으므로 여기서는 처리하지 않음
                 
-                # 진행률 최종 업데이트
+                # 진행률 최종 업데이트 (취소되지 않은 경우에만)
                 if update_progress and not (check_cancelled and check_cancelled()):
                     update_progress(1.0, len(microbe_names_list), len(microbe_names_list))
                     
