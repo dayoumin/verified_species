@@ -243,7 +243,7 @@ class MicrobeVerifier:
                 results_list = [self.create_mock_microbe_result(name) for name in microbe_names_list]
                 if self.result_callback:
                     for i, result_item in enumerate(results_list):
-                        self.result_callback(result_item, "microbe")
+                        self.result_callback(result_item, "col")
                         self.update_progress((i + 1) / total_items)
                 self.update_status("모의 검증 완료")
                 self.update_progress(1.0)

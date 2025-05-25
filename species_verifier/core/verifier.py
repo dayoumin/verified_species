@@ -550,7 +550,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
             # 타입 오류 결과도 콜백으로 전달 가능 (선택적)
             if result_callback:
                 try:
-                    result_callback(error_result.copy(), 'microbe')
+                    result_callback(error_result.copy(), 'col')
                 except Exception as cb_err:
                     print(f"[Error Verifier Core] Result callback failed for error result: {cb_err}")
             results.append(error_result)
@@ -599,7 +599,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
             # 결과 콜백 호출
             if result_callback:
                 try:
-                    result_callback(single_result.copy(), 'microbe') # 결과 복사본 전달
+                    result_callback(single_result.copy(), 'col') # 결과 복사본 전달
                 except Exception as cb_err:
                     print(f"[Error Verifier Core] Result callback failed for '{microbe_name}': {cb_err}")
 
@@ -614,7 +614,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
             # 오류 결과도 콜백으로 전달
             if result_callback:
                 try:
-                    result_callback(error_result.copy(), 'microbe')
+                    result_callback(error_result.copy(), 'col')
                 except Exception as cb_err:
                     print(f"[Error Verifier Core] Result callback failed for error: {cb_err}")
             results.append(error_result)
