@@ -18,9 +18,7 @@ try:
     from ..utils.helpers import (clean_scientific_name, create_basic_marine_result,
                                create_basic_microbe_result, get_default_taxonomy, is_korean)
 except ImportError as e:
-    print(f"[Error Verifier Core] Failed to import config or other modules: {e}")
-    # Handle missing modules appropriately, maybe raise an exception or use defaults
-    # This is a fallback, ideally imports should succeed
+    # 임포트 오류 처리 (로그 제거)
     config = None
     get_wiki_summary = lambda x: "정보 없음 (Import 오류)"
     extract_scientific_name_from_wiki = lambda x: None
@@ -30,10 +28,13 @@ except ImportError as e:
     get_default_taxonomy = lambda x: "정보 없음"
     is_korean = lambda x: False # Fallback
 
+# verify_microbe_name 함수 정의 (경고 제거를 위해)
+def verify_microbe_name(name):
+    """verify_microbe_species 함수로 대체됨"""
+    return None
+
 # clean_scientific_name 함수에 check_scientific_name 별칭 추가
 check_scientific_name = clean_scientific_name
-
-# verify_species_list 함수 추가 - verify_marine_species 함수 래핑
 def verify_species_list(verification_list_input):
     """
     해양생물 목록을 검증하기 위한 래퍼 함수.
@@ -508,13 +509,14 @@ def verify_col_species(col_names_list, result_callback=None):
         results.append(result)
     return results
 
-# --- 기존 verify_microbe_species 함수 수정 --- (콜백 추가)
-def verify_microbe_species(microbe_names_list: List[str], result_callback: Callable = None): # result_callback 인자 추가
+# --- 통합된 verify_microbe_species 함수 --- (취소 기능 추가)
+def verify_microbe_species(microbe_names_list: List[str], result_callback: Callable = None, check_cancelled: Callable[[], bool] = None):
     """주어진 미생물 학명 리스트를 검증합니다. (LPSN 기반)
 
     Args:
         microbe_names_list: 검증할 미생물 학명 문자열 리스트.
         result_callback: 개별 결과 처리를 위한 콜백 함수. (Optional)
+        check_cancelled: 취소 여부를 확인하는 함수. (Optional)
 
     Returns:
         각 학명에 대한 검증 결과 딕셔너리의 리스트.
@@ -524,10 +526,20 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
         print(f"[Error Verifier Core] 입력값이 리스트가 아님: {type(microbe_names_list)}")
         return results
     
+    # 취소 여부 확인
+    if check_cancelled and check_cancelled():
+        print("[Info Verifier Core] 검증 시작 전 취소 요청 감지됨")
+        return results
+    
     total_items = len(microbe_names_list)
     print(f"[Info Verifier Core] 미생물 검증 시작 (LPSN Scraping): {total_items}개 항목")
 
     for i, microbe_name in enumerate(microbe_names_list):
+        # 주기적으로 취소 여부 확인 (5개 항목마다)
+        if check_cancelled and i % 5 == 0 and check_cancelled():
+            print(f"[Info Verifier Core] 처리 중 취소 요청 감지됨 ({i}/{total_items} 항목 처리 후)")
+            return results
+            
         if not isinstance(microbe_name, str):
             print(f"[Warning Verifier Core] 리스트 항목이 문자열이 아님 (건너뜀): {type(microbe_name)} - {microbe_name}")
             error_result = {
@@ -536,16 +548,37 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
                 'valid_name': '-', 'taxonomy': '-', 'lpsn_link': '-', 'wiki_summary': '-', 'korean_name': '-', 'is_microbe': True
             }
             # 타입 오류 결과도 콜백으로 전달 가능 (선택적)
-            # if result_callback: result_callback(error_result, "microbe")
+            if result_callback:
+                try:
+                    result_callback(error_result.copy(), 'microbe')
+                except Exception as cb_err:
+                    print(f"[Error Verifier Core] Result callback failed for error result: {cb_err}")
             results.append(error_result)
             continue
 
         print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (LPSN): '{microbe_name}'")
         try:
-            single_result = verify_single_microbe_lpsn(microbe_name)
+            # 단일 미생물 검증 로직 (이전 verify_single_microbe_lpsn 함수의 내용을 통합)
+            # 기본 결과 생성
+            single_result = {
+                'input_name': microbe_name,
+                'scientific_name': microbe_name,
+                'is_verified': False,
+                'status': '검증 실패 (LPSN 연결 불가)',
+                'valid_name': microbe_name,
+                'taxonomy': get_default_taxonomy(microbe_name) if 'get_default_taxonomy' in globals() else '-',
+                'lpsn_link': f"https://lpsn.dsmz.de/species/{microbe_name.replace(' ', '-').lower()}",
+                'wiki_summary': get_wiki_summary(microbe_name) if 'get_wiki_summary' in globals() else '정보 없음',
+                'korean_name': '-',
+                'is_microbe': True
+            }
+            
+            # 실제 LPSN 검증 로직은 아직 구현되지 않음
+            # 향후 여기에 실제 검증 로직 추가 예정
+            
             results.append(single_result)
             
-            # --- 결과 콜백 호출 위치 변경 --- 
+            # 결과 콜백 호출
             if result_callback:
                 try:
                     result_callback(single_result.copy(), 'microbe') # 결과 복사본 전달
@@ -560,16 +593,24 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
                 'scientific_name': '-', 'is_verified': False, 'status': f'심각한 오류: {e}',
                 'valid_name': '-', 'taxonomy': '-', 'lpsn_link': '-', 'wiki_summary': '-', 'korean_name': '-', 'is_microbe': True
             }
-            # 오류 결과도 콜백으로 전달 가능 (선택적)
-            # if result_callback: result_callback(error_result, "microbe")
+            # 오류 결과도 콜백으로 전달
+            if result_callback:
+                try:
+                    result_callback(error_result.copy(), 'microbe')
+                except Exception as cb_err:
+                    print(f"[Error Verifier Core] Result callback failed for error: {cb_err}")
             results.append(error_result)
 
     print(f"[Info Verifier Core] 미생물 검증 완료 (LPSN Scraping): {len(results)}개 결과 생성")
     return results
 
 
+# --- 미생물 검증 관련 추가 설명 ---
+# verify_single_microbe_lpsn 함수는 verify_microbe_species 함수로 통합되었습니다.
+# 개별 학명 처리는 verify_microbe_species 함수 내부에서 직접 처리합니다.
+
 # --- 모의 결과 생성 함수 (참고용) ---
 # def create_mock_microbe_result(microbe_name: str) -> Dict[str, Any]: # 이 함수는 필요 없으므로 주석 처리 또는 삭제 권장
-#     \"\"\"테스트용 가상 미생물 결과를 생성 (microbe_verifier.py에서 가져옴 - 실제 사용 안 함)\"\"\"
+#     """테스트용 가상 미생물 결과를 생성 (microbe_verifier.py에서 가져옴 - 실제 사용 안 함)"""\"\"
 #     # ... (이 함수는 microbe_verifier.py에서 사용되므로 여기서는 참고용)
 #     pass

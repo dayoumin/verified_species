@@ -138,17 +138,23 @@ class MicrobeVerifier:
         # 기본 분류 제공
         return "Domain: Bacteria"
     
-    def perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None) -> List[Dict[str, Any]]:
+    def perform_microbe_verification(self, microbe_names_list: List[str], context: Union[List[str], str, None] = None, check_cancelled: Callable[[], bool] = None) -> List[Dict[str, Any]]:
         """미생물 학명 목록을 검증하는 함수 (LPSN 사이트 이용) - 수정됨
         
         Args:
             microbe_names_list: 검증할 미생물 학명 목록
             context: 검증 컨텍스트 (파일 경로 또는 학명 리스트)
+            check_cancelled: 취소 여부를 확인하는 함수
             
         Returns:
             검증 결과 목록
         """
         try:
+            # 취소 여부 확인
+            if check_cancelled and check_cancelled():
+                print("[Info MicrobeVerifier] 검증 시작 전 취소 요청 감지됨")
+                return []  # 빈 리스트 반환
+                
             # 초기 설정
             if not isinstance(microbe_names_list, list):
                 print(f"[Error MicrobeVerifier] 입력값이 리스트가 아님: {type(microbe_names_list)}")
@@ -166,6 +172,11 @@ class MicrobeVerifier:
             self.update_status(initial_status)
             self.update_progress(0)
             
+            # 취소 여부 한번 더 확인
+            if check_cancelled and check_cancelled():
+                print("[Info MicrobeVerifier] 검증 직전 취소 요청 감지됨")
+                return []
+                
             # 전체 리스트를 verify_microbe_species 함수에 한 번만 전달
             if verify_microbe_species is not None:
                 try:
@@ -173,9 +184,43 @@ class MicrobeVerifier:
                     # 필요하다면 verifier.py 내부에서 콜백 호출 로직 추가 필요
                     # 여기서는 전체 리스트를 전달하여 결과를 한 번에 받음
                     print(f"[Info MicrobeVerifier] Calling verify_microbe_species with {total_items} items...")
-                    # verify_microbe_species 함수에 result_callback 전달
-                    results_list = verify_microbe_species(microbe_names_list, self.result_callback) 
-                    print(f"[Info MicrobeVerifier] verify_microbe_species returned {len(results_list)} results.")
+                    print(f"[Info MicrobeVerifier] verify_microbe_species 호출 시작 - 전체 {total_items}개 항목 처리 예정")
+                    
+                    # 통합된 verify_microbe_species 함수 호출
+                    # 취소 기능을 포함하여 호출
+                    print(f"[Info MicrobeVerifier] verify_microbe_species 호출 시작 - 전체 {total_items}개 항목 처리 예정")
+                    
+                    # 처리된 항목 수를 추적하기 위한 카운터 변수
+                    processed_count = [0]  # 변경 가능한 리스트로 사용
+                    
+                    # 진행률 업데이트를 위한 콜백 함수 정의
+                    def progress_callback(result, result_type):
+                        if self.result_callback:
+                            self.result_callback(result, result_type)
+                        
+                        # 현재 처리된 항목 수 증가 및 계산
+                        processed_count[0] += 1
+                        progress = float(processed_count[0]) / total_items if total_items > 0 else 0
+                        self.update_progress(progress)
+                        self.update_status(f"미생물 검증 중... ({processed_count[0]}/{total_items})")
+                    
+                    # verify_microbe_species 함수 호출 (취소 기능 포함)
+                    results_list = verify_microbe_species(
+                        microbe_names_list, 
+                        result_callback=progress_callback, 
+                        check_cancelled=check_cancelled
+                    )
+                    
+                    print(f"[Info MicrobeVerifier] verify_microbe_species 처리 완료 - 반환된 결과 수: {len(results_list)}/{total_items}개")
+                    
+                    # 취소 여부 최종 확인
+                    if check_cancelled and check_cancelled():
+                        print("[Info MicrobeVerifier] 결과 처리 전 취소 요청 감지됨")
+                        cancel_status = f"미생물 검증 취소됨 ({len(results_list)}/{total_items} 결과)"
+                        if isinstance(context, str):
+                            cancel_status = f"파일 '{os.path.basename(context)}' 검증 취소됨 ({len(results_list)}/{total_items} 결과)"
+                        self.update_status(cancel_status)
+                        return results_list
                     
                     # 최종 상태 업데이트 (진행률은 콜백에서 처리되므로 여기서는 1.0으로 설정)
                     completion_status = f"미생물 검증 완료 ({len(results_list)}/{total_items} 결과)"

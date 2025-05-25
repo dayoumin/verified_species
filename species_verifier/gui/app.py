@@ -32,8 +32,7 @@ from species_verifier.gui.bridge import (
     perform_verification,
     perform_microbe_verification,
     process_file,
-    process_microbe_file,
-    KOREAN_NAME_MAPPINGS
+    process_microbe_file
 )
 
 
@@ -44,8 +43,8 @@ class SpeciesVerifierApp(ctk.CTk):
         """초기화"""
         super().__init__()
         
-        # 매핑 테이블 로드
-        self.korean_name_mappings = KOREAN_NAME_MAPPINGS
+        # 한국어 매핑은 사용하지 않음
+        self.korean_name_mappings = {}
         
         # 내부 상태 변수 - active_tab 제거 (CTkTabview가 관리)
         # self.active_tab = "해양생물" 
@@ -842,8 +841,10 @@ class SpeciesVerifierApp(ctk.CTk):
     def _perform_microbe_verification(self, microbe_names_list, context: Union[List[str], str, None] = None):
         """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
         try:
-            # 취소 플래그 초기화
+            # 취소 플래그 초기화 및 취소 로깅 플래그 초기화
             self.is_cancelled = False
+            if hasattr(self, '_cancel_logged'):
+                delattr(self, '_cancel_logged')
             
             # 취소 확인 함수 정의
             def check_cancelled():
@@ -1100,40 +1101,58 @@ class SpeciesVerifierApp(ctk.CTk):
         else: # running/disabled 상태
             # 진행 표시는 _start_..._thread 함수에서 _show_progress_ui를 통해 처리
             pass
+            
+        # 탭 뷰 자체
+        if hasattr(self, 'tab_view'):
+            self.tab_view.configure(state=enable_state)
 
+        # --- 상태 바 업데이트 ---
+        if is_idle:
+            results_exist = self._check_results_exist()
+            print(f"[Debug _set_ui_state(idle)] Active Tab: {self.tab_view.get()}, Results Exist: {results_exist}")
+            # StatusBar의 set_ready 호출 (저장 버튼 표시 여부 전달)
+            if hasattr(self, 'status_bar'): # status_bar 객체 확인
+                self.status_bar.set_ready(show_save_button=results_exist)
+        else: # running/disabled 상태
+            # 진행 표시는 _start_..._thread 함수에서 _show_progress_ui를 통해 처리
+            pass
+            
     # --- 결과 유무 확인 헬퍼 함수 추가 ---
     def _check_results_exist(self) -> bool:
         """현재 활성 탭에 결과가 있는지 확인합니다."""
         if not hasattr(self, 'tab_view'):
             return False
         current_tab_name = self.tab_view.get()
-        if current_tab_name == "":
+        if current_tab_name == "해양생물(WoRMS)":
             results_list = self.current_results_marine
-        elif current_tab_name == " (LPSN)":
+        elif current_tab_name == "미생물 (LPSN)":
             results_list = self.current_results_microbe
-        elif current_tab_name == " (COL)":
+        elif current_tab_name == "담수 등 전체생물(COL)":
             results_list = self.current_results_col
         else:
             print(f"[Debug Check Results] Unknown tab name: {current_tab_name}")
             return False
-        list_exists = results_list is not None
-        list_not_empty = bool(results_list)
-        print(f"[Debug Check Results - {current_tab_name}] List exists: {list_exists}, List not empty: {list_not_empty}, List content (first 5): {results_list[:5] if results_list else 'None or Empty'}")
-        return list_exists and list_not_empty
-
+        
+        return len(results_list) > 0
+        
     def _process_result_queue(self):
         try:
             # 최대 처리할 항목 수 (None = 큐가 비어있을 때까지 모두 처리)
             max_items_per_call = None
             
-            # 취소 요청 시 처리할 항목 수 제한
-            if hasattr(self, 'is_cancelled') and self.is_cancelled:
-                max_items_per_call = 10  # 취소 시에는 적은 양만 처리하여 UI 반응성 유지
-                print(f"[Debug] 취소된 작업의 결과 처리 중 - 제한된 처리량: {max_items_per_call}")
+            # 취소 요청 시에도 모든 결과 처리
+            # 취소 상태에 대한 로그는 한 번만 출력하기 위해 플래그 사용
+            if hasattr(self, 'is_cancelled') and self.is_cancelled and not hasattr(self, '_cancel_logged'):
+                print(f"[Info] 취소된 작업이지만 모든 결과 처리 중")
+                # 로그 출력 플래그 설정
+                self._cancel_logged = True
+            # 취소가 아닌 경우 로그 플래그 초기화
+            elif not (hasattr(self, 'is_cancelled') and self.is_cancelled) and hasattr(self, '_cancel_logged'):
+                delattr(self, '_cancel_logged')
             
             # 남은 큐 사이즈 확인
             queue_size = self.result_queue.qsize()
-            if queue_size > 0:
+            if queue_size > 0 and (not hasattr(self, 'is_cancelled') or not self.is_cancelled):
                 print(f"[Debug] 현재 큐에 {queue_size}개 결과 대기 중")
             
             # 항목 처리
@@ -1164,7 +1183,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 이미 취소 중인 경우 중복 실행 방지
         if getattr(self, '_is_cancelling', False):
             return
-            
+                
         try:
             self._is_cancelling = True
             # 취소 플래그 설정 및 UI 복원
@@ -1181,83 +1200,24 @@ class SpeciesVerifierApp(ctk.CTk):
                 while not self.result_queue.empty():
                     try:
                         self.result_queue.get_nowait()
+                        self.result_queue.task_done()
                     except queue.Empty:
                         break
                 print("[Debug] 결과 큐 초기화 완료")
             except Exception as e:
-                print(f"[Error] 결과 큐 초기화 중 오류: {e}")
-            
-            # 스레드 중단을 위한 플래그 설정
-            self.is_verifying = False
-            
-            # UI 상태 복원
-            self.after(0, lambda: self._set_ui_state("idle"))
-            
-            # 상태 메시지 업데이트
-            if hasattr(self, 'status_bar'):
-                self.status_bar.set_status("작업이 취소되었습니다.")
-            
-            # UI 상태 즉시 초기화
-            self.after(0, lambda: self._set_ui_state("idle"))
-            print("[Debug] UI 상태가 초기화되었습니다.")
-            
-            # 검증 중 플래그 해제 - 다른 검증 시작 허용
-            self.is_verifying = False
-            
-            # 전체 항목 수 변수 초기화
-            if hasattr(self, 'total_verification_items'):
-                delattr(self, 'total_verification_items')
-            
-            # 파일 이름 및 개수 초기화
-            if hasattr(self, 'current_file_path'):
-                delattr(self, 'current_file_path')
-            if hasattr(self, 'current_file_item_count'):
-                delattr(self, 'current_file_item_count')
-            
-            # 현재 활성화된 탭에 따라 파일 정보 초기화
-            if hasattr(self, 'tab_view'):
-                current_tab = self.tab_view.get()
-                print(f"[Debug] 현재 활성화된 탭: {current_tab}")
-                
-                # 해양생물 탭이 활성화된 경우
-                if current_tab == "해양생물(WoRMS)" and hasattr(self, 'marine_tab'):
-                    self.marine_tab.reset_file_info()
-                    print("[Debug] 해양생물 탭 파일 정보 초기화 완료")
-                    
-                # 미생물 탭이 활성화된 경우
-                elif current_tab == "미생물 (LPSN)" and hasattr(self, 'microbe_tab'):
-                    # 미생물 탭에 reset_file_info 메서드가 없는 경우 set_selected_file(None)을 사용
-                    if hasattr(self.microbe_tab, 'reset_file_info'):
-                        self.microbe_tab.reset_file_info()
-                    else:
-                        self.microbe_tab.set_selected_file(None)
-                    print("[Debug] 미생물 탭 파일 정보 초기화 완료")
-                    
-                # 전체생물 탭이 활성화된 경우
-                elif current_tab == "담수 등 전체생물(COL)" and hasattr(self, 'col_tab'):
-                    # 전체생물 탭에 reset_file_info 메서드가 없는 경우 set_selected_file(None)을 사용
-                    if hasattr(self.col_tab, 'reset_file_info'):
-                        self.col_tab.reset_file_info()
-                    else:
-                        self.col_tab.set_selected_file(None)
-                    print("[Debug] 전체생물 탭 파일 정보 초기화 완료")
-            
-            # 상태 표시줄 초기화
-            if hasattr(self, 'status_bar'):
-                # 진행률 초기화
-                self.after(0, lambda: self.status_bar.set_progress(0, 0, 1))
-                # 상태 메시지 초기화
-                self.after(0, lambda: self.status_bar.set_status("준비됨"))
-                # UI 상태 초기화
-                self.after(0, lambda: self.status_bar.set_ready("준비됨"))
-                
+                print(f"[Error] Error processing result queue: {e}")
+                traceback.print_exc()
+            finally:
+                # 큐 처리 함수 다시 스케줄링
+                # 큐가 비어있거나 취소된 경우 더 빨리 처리
+                delay = 20 if self.result_queue.empty() or (hasattr(self, 'is_cancelled') and self.is_cancelled) else 50
+                self.after(delay, self._process_result_queue)
         except Exception as e:
-            print(f"[Error] 취소 처리 중 오류 발생: {e}")
-            import traceback
+            print(f"[Error] 작업 취소 중 오류 발생: {e}")
             traceback.print_exc()
         finally:
+            # 취소 작업이 완료되었으므로 플래그 재설정
             self._is_cancelling = False
-    
 
     def show_centered_message(self, msg_type: str, title: str, message: str):
         """중앙 메시지 표시"""

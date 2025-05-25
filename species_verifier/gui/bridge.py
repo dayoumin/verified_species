@@ -149,7 +149,7 @@ except ImportError as e:
         print("[Warning] Using dummy get_wiki_summary function")
         return "정보 없음 (더미 함수)"
 
-# --- 국명-학명 매핑 로딩 로직 (Excel 파일 기반) ---
+# --- 기본 경로 가져오기 함수 ---
 
 def get_base_path():
     """ 실행 파일의 기본 경로를 반환합니다 (개발 환경과 .exe 환경 모두 지원). """
@@ -160,42 +160,6 @@ def get_base_path():
         # 스크립트로 실행될 때 (.py)
         # bridge.py는 gui 폴더 안에 있으므로, 프로젝트 루트는 두 단계 위입니다.
         return Path(__file__).resolve().parent.parent.parent
-
-def load_korean_mappings_from_excel() -> Dict[str, str]:
-    """ 실행 파일 옆의 data 폴더에 있는 Excel 파일에서 매핑을 로드합니다. """
-    base_path = get_base_path()
-    # 'data' 하위 폴더에 있다고 가정
-    excel_path = base_path / "data" / "korean_mappings.xlsx"
-    print(f"[Info Bridge] Attempting to load Korean mappings from: {excel_path}")
-
-    mappings = {}
-    if excel_path.exists():
-        try:
-            df = pd.read_excel(excel_path, header=0) # 첫 번째 행을 헤더로 사용
-            # '국명', '학명' 컬럼이 있는지 확인 (대소문자, 공백 무시)
-            df.columns = [str(col).strip().lower() for col in df.columns] # 컬럼명을 문자열로 변환 후 처리
-            required_cols = ['국명', '학명']
-            if all(col in df.columns for col in required_cols):
-                # NaN 값 제거 후 딕셔너리 생성 (국명과 학명 모두 문자열로 변환)
-                df_cleaned = df[required_cols].dropna()
-                df_cleaned['국명'] = df_cleaned['국명'].astype(str)
-                df_cleaned['학명'] = df_cleaned['학명'].astype(str)
-                # 중복된 국명이 있을 경우 마지막 값 사용 (기본 동작)
-                mappings = pd.Series(df_cleaned.학명.values, index=df_cleaned.국명).to_dict()
-                print(f"[Info Bridge] Loaded {len(mappings)} Korean mappings from {excel_path}")
-            else:
-                print(f"[Error Bridge] Excel file {excel_path} missing required columns '국명' or '학명'. Found columns: {df.columns.tolist()}")
-
-        except Exception as e:
-            print(f"[Error Bridge] Failed to load or parse Excel mappings from {excel_path}: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print(f"[Warning Bridge] Mapping file not found at {excel_path}. Korean name lookup will not work.")
-    return mappings
-
-# KOREAN_NAME_MAPPINGS 딕셔너리를 Excel 로딩 함수 호출 결과로 초기화
-KOREAN_NAME_MAPPINGS: Dict[str, str] = load_korean_mappings_from_excel()
 
 # 코어 모듈 임포트 시도 (수정: 클래스 임포트 복원)
 try:
@@ -399,30 +363,22 @@ def perform_microbe_verification(
             print(f"[Bridge] Calling MicrobeVerifier.perform_microbe_verification for {len(microbe_names_list)} items...")
             
             # 검증 전 입력 학명 수 출력
-            print(f"[Debug Bridge] 검증할 미생물 학명 수: {len(microbe_names_list)}")
-            if microbe_names_list and len(microbe_names_list) > 0:
-                print(f"[Debug Bridge] 검증할 미생물 학명 샘플: {microbe_names_list[:min(5, len(microbe_names_list))]}")
+            print(f"[Info] 검증할 미생물 학명 수: {len(microbe_names_list)} (전체 항목 처리 예정)")
+            if microbe_names_list and len(microbe_names_list) > 0 and len(microbe_names_list) < 10:
+                print(f"[Info] 검증할 미생물 학명 샘플: {microbe_names_list}")
+            elif microbe_names_list and len(microbe_names_list) >= 10:
+                print(f"[Info] 검증할 미생물 학명 샘플: {microbe_names_list[:5]} ... 외 {len(microbe_names_list)-5}개")
             
             # 취소 확인 함수가 있는 경우 전달
             if check_cancelled:
                 # 취소 확인 함수를 전달하는 경우
                 print("[Debug Bridge] 취소 확인 함수 전달 준비 완료")
-                # 취소 여부 확인 래퍼 함수 정의
-                original_perform = verifier.perform_microbe_verification
-                
-                def perform_with_cancel_check(*args, **kwargs):
-                    # 각 학명에 대한 검증 전 취소 여부 확인
-                    if check_cancelled and check_cancelled():
-                        print("[Info Bridge] 검증 취소 요청 받음")
-                        return []
-                    return original_perform(*args, **kwargs)
-                
-                # 원래 함수 대체
-                verifier.perform_microbe_verification = perform_with_cancel_check
+                # 이제 perform_microbe_verification 메서드에 직접 check_cancelled 함수를 전달합니다.
+                # 래퍼 함수를 사용하지 않고 직접 전달하는 방식으로 변경합니다.
             
             # MicrobeVerifier의 메서드 호출 시 context 전달
             results = []
-            # 취소 여부 확인
+            # 취소 여부 확인 - 여기서 한 번 확인하고 나머지는 MicrobeVerifier 클래스에서 처리
             if check_cancelled and check_cancelled():
                 print("[Info Bridge] 검증 취소 요청 받음 - 처리 시작 전 중단")
                 return []
@@ -443,8 +399,8 @@ def perform_microbe_verification(
                     print("[Info Bridge] 검증 취소 요청 받음 - 검증 함수 호출 전 중단")
                     return []
                 
-                # 모든 항목을 한 번에 처리
-                batch_results = verifier.perform_microbe_verification(microbe_names_list, context=context)
+                # 모든 항목을 한 번에 처리 (취소 확인 함수도 전달)
+                batch_results = verifier.perform_microbe_verification(microbe_names_list, context=context, check_cancelled=check_cancelled)
                 
                 # 취소 여부 확인
                 if check_cancelled and check_cancelled():
@@ -457,6 +413,7 @@ def perform_microbe_verification(
                 
                 # 결과 처리
                 if batch_results:
+                    print(f"[Info Bridge] 배치 결과 개수: {len(batch_results)} / 전체 학명 수: {len(microbe_names_list)}")
                     results.extend(batch_results)
                     
                     # 취소 여부 확인
@@ -509,15 +466,15 @@ def process_file(file_path, korean_mode=False):
     Args:
         file_path (str): 처리할 파일 경로
         korean_mode (bool): 한글명 모드 여부 (True=한글명 있음, False=학명만)
-        
+
     Returns:
         List[str] 또는 List[Tuple[str, str]]: 추출된 학명 목록 또는 (한글명, 학명) 튜플 목록
     """
-    print(f"[Info Bridge] 파일 '{file_path}' 처리 시작.")
-    
+    print(f"[Info] 파일 '{file_path}' 처리 시작.")
+
     results = []
     file_extension = os.path.splitext(file_path)[1].lower()
-    
+
     # 파일 확장자별 처리
     try:
         if file_extension in ['.xlsx', '.xls']:
