@@ -430,71 +430,117 @@ class SpeciesVerifierApp(ctk.CTk):
         thread.start()
 
     def _perform_col_verification(self, verification_list):
-        """COL 글로벌 API를 이용한 검증 (백그라운드)"""
+        """COL 글로벌 API를 이용한 검증 (백그라운드) - 배치 처리 적용"""
         from species_verifier.core.col_api import verify_col_species
-        import time  # time 모듈 임포트
-        
-        self.is_cancelled = False  # 검증 시작 시 취소 플래그 초기화
-        total = len(verification_list)
-        processed_count = 0
-        
-        print(f"[Debug] COL 검증 시작: {total}개 항목")
+        import time
         
         try:
-            for i, name in enumerate(verification_list):
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            
+            # 전체 항목 수 저장
+            self.total_verification_items = len(verification_list)
+            print(f"[Debug COL] 전체 COL 항목 수 설정: {self.total_verification_items}")
+            
+            # 배치 처리 설정
+            from species_verifier.config import app_config, api_config
+            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
+            
+            total_items = len(verification_list)
+            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
+            
+            print(f"[Info COL] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+            print(f"[Info COL] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
+            
+            # 배치별 처리
+            processed_items = 0
+            for batch_idx in range(total_batches):
                 # 취소 확인
                 if self.is_cancelled:
-                    print("[Debug] 사용자 요청으로 작업 취소됨")
+                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
                     break
+                
+                # 현재 배치 생성
+                start_idx = batch_idx * BATCH_SIZE
+                end_idx = min(start_idx + BATCH_SIZE, total_items)
+                current_batch = verification_list[start_idx:end_idx]
+                
+                print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                
+                # 배치 진행률 업데이트
+                batch_progress = batch_idx / total_batches
+                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                
+                # 현재 배치 내 개별 항목 처리
+                try:
+                    for item_idx, name in enumerate(current_batch):
+                        # 항목별 취소 확인
+                        if self.is_cancelled:
+                            print(f"[Info COL] 배치 {batch_idx + 1} 내 항목 처리 중 취소 감지")
+                            break
+                        
+                        input_name_display = name
+                        query = name
+                        if isinstance(name, (tuple, list)):
+                            input_name_display = name[0]
+                            query = name[1] if len(name) > 1 else name[0]
+                        
+                        # 항목별 진행률 업데이트
+                        current_item = batch_idx * BATCH_SIZE + item_idx + 1
+                        item_progress = batch_progress + ((item_idx + 1) / len(current_batch)) / total_batches
+                        self.after(0, lambda p=item_progress, c=current_item: self.update_progress(p, c, total_items))
+                        self.after(0, lambda d=input_name_display, c=current_item: 
+                                  self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: '{d[:20]}' 검증 중... ({c}/{total_items})"))
+                        
+                        # 검증 실행
+                        start_time = time.time()
+                        result = verify_col_species(query)
+                        duration = time.time() - start_time
+                        
+                        print(f"[Debug] COL 항목 {current_item}/{total_items} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
+                        
+                        # 결과 처리
+                        result['input_name'] = input_name_display
+                        if not self.is_cancelled:
+                            self.result_queue.put((result, 'col'))
+                            print(f"[Debug] COL 결과를 COL 탭에 추가: {result.get('input_name', '')}")
+                        
+                        processed_items += 1
                     
-                input_name_display = name  # 기본값은 직접 입력된 이름
-                query = name
-                if isinstance(name, (tuple, list)):
-                    input_name_display = name[0]  # 한글명 등 원래 입력 이름
-                    query = name[1] if len(name) > 1 else name[0]  # 학명 쿼리
+                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                    
+                except Exception as e:
+                    print(f"[Error COL] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
                 
-                # 진행률 업데이트 레이블 설정
-                progress_label = f"\'{input_name_display[:20]}...\' 검증 중... ({processed_count + 1}/{total})"
-                self.after(0, lambda text=progress_label: self._update_progress_label(text))
+                # 마지막 배치가 아니면 배치간 지연 시간 적용
+                if batch_idx < total_batches - 1 and not self.is_cancelled:
+                    print(f"[Info COL] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                    time.sleep(BATCH_DELAY)
                 
-                # 시간 측정 시작
-                start_time = time.time()
-                
-                # 검증 실행
-                result = verify_col_species(query)
-                
-                # 시간 측정 종료
-                duration = time.time() - start_time
-                print(f"[Debug] COL 항목 {i+1}/{total} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
-                
-                # 결과 딕셔셔너리에 입력명 추가 (표시를 위해)
-                result['input_name'] = input_name_display 
-                
-                # 결과를 큐에 넣음 - 여기가 핵심!
-                # 명시적으로 'col' 탭 타입을 전달하여 COL 탭에 결과가 표시되도록 함
-                self.result_queue.put((result, 'col'))
-                print(f"[Debug] COL 결과를 COL 탭에 추가: {result.get('input_name', '')}")
-                
-                processed_count += 1
-                progress_value = processed_count / total
-                self.after(0, lambda value=progress_value: self.update_progress(value))
-                
-                # 취소 확인 (각 항목 처리 후에도 확인)
+                # 취소 확인 (지연 후)
                 if self.is_cancelled:
-                    print("[Debug] 사용자 요청으로 작업 취소됨")
+                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
                     break
-
+            
+            if not self.is_cancelled:
+                print(f"[Info COL] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+            else:
+                print(f"[Info COL] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
+            
         except Exception as e:
-            print(f"[Error _perform_col_verification] Error during verification: {e}")
+            print(f"[Error _perform_col_verification] Error during batch verification: {e}")
+            import traceback
             traceback.print_exc()
             self.after(0, lambda: self.show_centered_message("error", "COL 검증 오류", f"COL 검증 중 오류 발생: {e}"))
         finally:
-            # 작업 취소 여부 출력
+            # 작업 완료/취소 상태 처리
             if self.is_cancelled:
-                print("[Debug] COL 검증 작업이 취소되었습니다.")
                 self.after(0, lambda: self._update_progress_label("검증 취소됨"))
             else:
-                print(f"[Debug] COL 검증 작업 완료: 총 {processed_count}/{total} 항목 처리됨")
                 self.after(0, lambda: self._update_progress_label("검증 완료"))
             
             # 최종 진행률 및 상태 레이블 업데이트
@@ -503,7 +549,7 @@ class SpeciesVerifierApp(ctk.CTk):
             # 프로그레스바 정지
             if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'progressbar'):
                 self.after(50, lambda: self.status_bar.progressbar.stop())
-                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate')) 
+                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate'))
 
             # UI 상태 복원 및 is_verifying 플래그 해제
             self.after(100, lambda: self._set_ui_state("normal"))
@@ -824,7 +870,7 @@ class SpeciesVerifierApp(ctk.CTk):
              self.marine_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
     def _perform_verification(self, verification_list_input):
-        """해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
+        """해양생물 검증 수행 (백그라운드 스레드에서 실행) - 배치 처리 적용"""
         try:
             # 취소 플래그 초기화
             self.is_cancelled = False
@@ -833,56 +879,96 @@ class SpeciesVerifierApp(ctk.CTk):
             def check_cancelled():
                 return self.is_cancelled
             
-            # 전체 항목 수 확인 (취소 시 UI 복원에 사용)
+            # 전체 항목 수 저장
+            self.total_verification_items = len(verification_list_input)
+            print(f"[Debug Marine] 전체 해양생물 항목 수 설정: {self.total_verification_items}")
+            
+            # 배치 처리 설정
+            from species_verifier.config import app_config, api_config
+            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
+            
             total_items = len(verification_list_input)
+            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
             
-            # 이미 설정되지 않은 경우에만 설정
-            if not hasattr(self, 'total_verification_items') or self.total_verification_items == 0:
-                self.total_verification_items = total_items
-                
-            # 해양생물 탭용 별도 변수에도 저장 (이미 설정되지 않은 경우에만)
-            if not hasattr(self, 'marine_total_items') or self.marine_total_items == 0:
-                self.marine_total_items = total_items
+            print(f"[Info Marine] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+            print(f"[Info Marine] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
             
-            # 진행 상태 디버깅을 위한 로그 추가
-            print(f"[Debug Verification] 전체 항목 수 설정: {self.total_verification_items}")
-            print(f"[Debug Verification] verification_list_input 타입: {type(verification_list_input)}, 길이: {len(verification_list_input)}")
-            if verification_list_input and len(verification_list_input) > 0:
-                print(f"[Debug Verification] 첫 번째 항목: {verification_list_input[0]}")
-                if isinstance(verification_list_input[0], tuple):
-                    print(f"[Debug Verification] 첫 번째 항목은 튜플입니다: {verification_list_input[0][0] if len(verification_list_input[0]) > 0 else '(비어있음)'}")
+            # 결과 콜백 함수 정의
+            def result_callback_wrapper(result, tab_type):
+                if not self.is_cancelled:
+                    self.result_queue.put((result, tab_type))
+                    print(f"[Debug] 해양생물 결과를 해양생물 탭에 추가: {result.get('input_name', '')}")
                 else:
-                    print(f"[Debug Verification] 첫 번째 항목은 튜플이 아닙니다: {verification_list_input[0]}")
+                    print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
+            
+            # 배치별 처리
+            processed_items = 0
+            for batch_idx in range(total_batches):
+                # 취소 확인
+                if self.is_cancelled:
+                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
+                    break
+                
+                # 현재 배치 생성
+                start_idx = batch_idx * BATCH_SIZE
+                end_idx = min(start_idx + BATCH_SIZE, total_items)
+                current_batch = verification_list_input[start_idx:end_idx]
+                
+                print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                
+                # 배치 진행률 업데이트
+                batch_progress = batch_idx / total_batches
+                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                
+                # 현재 배치 처리
+                try:
+                    from species_verifier.gui.bridge import perform_verification
+                    batch_results = perform_verification(
+                        current_batch,
+                        lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                            batch_progress + (p / total_batches), 
+                            processed_items + (curr or 0), 
+                            total_items
+                        )),
+                        lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
+                        result_callback=result_callback_wrapper,
+                        check_cancelled=check_cancelled
+                    )
+                    
+                    processed_items += len(current_batch)
+                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                    
+                except Exception as e:
+                    print(f"[Error Marine] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # 마지막 배치가 아니면 배치간 지연 시간 적용
+                if batch_idx < total_batches - 1 and not self.is_cancelled:
+                    print(f"[Info Marine] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                    time.sleep(BATCH_DELAY)
+                
+                # 취소 확인 (지연 후)
+                if self.is_cancelled:
+                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
+                    break
+            
+            if not self.is_cancelled:
+                print(f"[Info Marine] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
             else:
-                print("[Debug Verification] verification_list_input이 비어 있습니다.")
+                print(f"[Info Marine] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
-            # 전체 항목이 10개 이상인 경우 강제로 UI 업데이트 처리
-            if total_items > 10:
-                print(f"[Debug Verification] 전체 항목({total_items}개)이 10개 이상입니다. UI 진행률을 직접 설정합니다.")
-                # 초기 진행률 상태 설정
-                self.update_progress(0.0, 0, total_items)
-                self._update_progress_label(f"검증 시작: 총 {total_items}개 항목")
-            
-            # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
-            results = perform_verification(
-                verification_list_input, 
-                self.update_progress, 
-                self._update_progress_label,
-                # 큐에 (결과, 타입) 튜플을 넣는 함수 전달
-                result_callback=lambda r, t: self.result_queue.put((r, t)) if not self.is_cancelled else None,
-                check_cancelled=check_cancelled # 취소 확인 함수 전달
-            )
-            
-            # 백그라운드 작업 완료 후 플래그 해제 및 UI 복원
-            # self.after(0, lambda: self._update_results_display(results, "marine")) # 전체 결과 표시는 제거 (개별 처리됨)
         except Exception as e:
-            print(f"[Error _perform_verification] Error during verification call: {e}")
+            print(f"[Error _perform_verification] Error during batch verification: {e}")
+            import traceback
             traceback.print_exc()
         finally:
             # UI 상태 복원
             self.after(0, lambda: self._reset_status_ui())
             self.after(0, lambda: self._set_ui_state("normal"))
-            self.after(0, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
             # 완료 후 포커스 설정은 유지
             if self.marine_tab:
                 self.after(0, lambda: self.marine_tab.focus_entry())
@@ -916,7 +1002,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self.microbe_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
     def _perform_microbe_verification(self, microbe_names_list, context: Union[List[str], str, None] = None):
-        """미생물 검증 수행 (백그라운드 스레드에서 실행)"""
+        """미생물 검증 수행 (백그라운드 스레드에서 실행) - 배치 처리 적용"""
         try:
             # 취소 플래그 초기화 및 취소 로깅 플래그 초기화
             self.is_cancelled = False
@@ -927,67 +1013,112 @@ class SpeciesVerifierApp(ctk.CTk):
             def check_cancelled():
                 return self.is_cancelled
             
-            # 전체 항목 수 저장 (취소 시 UI 복원에 사용)
-            # 실제 처리할 항목 수로 설정 (입력 리스트 길이)
+            # 전체 항목 수 저장
             self.total_verification_items = len(microbe_names_list)
             print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
-            print(f"[Debug Microbe] microbe_names_list 타입: {type(microbe_names_list)}, 길이: {len(microbe_names_list)}")
-            if microbe_names_list and len(microbe_names_list) > 0:
-                print(f"[Debug Microbe] 첫 번째 항목: {microbe_names_list[0]}")
-            else:
-                print("[Debug Microbe] microbe_names_list가 비어 있습니다.")
             
-            # 브릿지 모듈의 함수 호출 (result_callback 대신 queue의 put 메서드 전달)
-            # 결과 콜백 함수 정의 - 결과와 함께 'microbe' 탭 타입을 전달
+            # 배치 처리 설정
+            from species_verifier.config import app_config, api_config
+            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
+            
+            total_items = len(microbe_names_list)
+            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
+            
+            print(f"[Info Microbe] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+            print(f"[Info Microbe] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
+            
+            # 결과 콜백 함수 정의
             def result_callback_wrapper(result, *args):
-                # 로그 추가
-                print(f"[Debug] result_callback_wrapper 호출됨: 결과 키={list(result.keys()) if isinstance(result, dict) else 'None'}, 추가 인자={args}")
-                
                 if not self.is_cancelled:
-                    # 결과와 함께 'microbe' 탭 타입을 명시적으로 전달
                     self.result_queue.put((result, 'microbe'))
                     print(f"[Debug] 미생물 결과를 미생물 탭에 추가: {result.get('input_name', '')}")
                 else:
                     print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
-                                        
             
-            results = perform_microbe_verification(
-                microbe_names_list,
-                self.update_progress,
-                self._update_progress_label,
-                # 새로 정의한 콜백 함수 전달
-                result_callback=result_callback_wrapper,
-                context=context, # context 전달
-                check_cancelled=check_cancelled # 취소 확인 함수 전달
-            )
-            # 여기서 results 변수는 사용되지 않지만, 호출은 필요합니다.
-            # 결과 처리는 result_callback을 통해 큐로 전달됩니다.
+            # 배치별 처리
+            processed_items = 0
+            for batch_idx in range(total_batches):
+                # 취소 확인
+                if self.is_cancelled:
+                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
+                    break
+                
+                # 현재 배치 생성
+                start_idx = batch_idx * BATCH_SIZE
+                end_idx = min(start_idx + BATCH_SIZE, total_items)
+                current_batch = microbe_names_list[start_idx:end_idx]
+                
+                print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                
+                # 배치 진행률 업데이트
+                batch_progress = batch_idx / total_batches
+                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                
+                # 현재 배치 처리
+                try:
+                    from species_verifier.gui.bridge import perform_microbe_verification
+                    batch_results = perform_microbe_verification(
+                        current_batch,
+                        lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                            batch_progress + (p / total_batches), 
+                            processed_items + (curr or 0), 
+                            total_items
+                        )),
+                        lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
+                        result_callback=result_callback_wrapper,
+                        context=context,
+                        check_cancelled=check_cancelled
+                    )
+                    
+                    processed_items += len(current_batch)
+                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                    
+                except Exception as e:
+                    print(f"[Error Microbe] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # 마지막 배치가 아니면 배치간 지연 시간 적용
+                if batch_idx < total_batches - 1 and not self.is_cancelled:
+                    print(f"[Info Microbe] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                    time.sleep(BATCH_DELAY)
+                
+                # 취소 확인 (지연 후)
+                if self.is_cancelled:
+                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
+                    break
+            
+            if not self.is_cancelled:
+                print(f"[Info Microbe] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+            else:
+                print(f"[Info Microbe] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
+            
         except Exception as e:
-            print(f"[Error _perform_microbe_verification] Error during verification call: {e}")
+            print(f"[Error _perform_microbe_verification] Error during batch verification: {e}")
+            import traceback
             traceback.print_exc()
-            # 오류 발생 시에도 UI 상태는 finally에서 복구
 
         finally:
             # 최종 진행률 및 상태 레이블 업데이트
-            self.after(0, lambda: self.update_progress(1.0)) # 진행률 100%
+            self.after(0, lambda: self.update_progress(1.0))
             self.after(10, lambda: self._update_progress_label("검증 완료"))
 
-            # 프로그레스바 정지 (수정: self.status_bar 사용)
+            # 프로그레스바 정지
             if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'progressbar'):
                 self.after(50, lambda: self.status_bar.progressbar.stop())
-                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate')) # 확정 모드로 설정
+                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate'))
 
-            # UI 상태를 'normal'로 설정하여 상태바/버튼 정리 (100ms 지연 후)
+            # UI 상태를 'normal'로 설정하여 상태바/버튼 정리
             self.after(100, lambda: self._set_ui_state("normal"))
+            self.after(20, lambda: setattr(self, 'is_verifying', False))
 
-            # --- is_verifying 플래그 리셋 추가 ---
-            self.after(20, lambda: setattr(self, 'is_verifying', False)) # 검증 완료 플래그 해제
-
-            # 입력창 초기화 및 포커스 설정 (수정: self.microbe_tab 사용 및 delete 인덱스 수정)
+            # 입력창 초기화 및 포커스 설정
             if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'entry'):
                 self.after(600, lambda: self.microbe_tab.entry.delete("1.0", tk.END))
             if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'focus_entry'):
-                 self.after(650, self.microbe_tab.focus_entry) # focus_entry 메서드 호출
+                 self.after(650, self.microbe_tab.focus_entry)
 
     def _process_file(self, file_path: str, tab_name: str = "marine"):
         """파일 처리 (모든 탭 통합)
