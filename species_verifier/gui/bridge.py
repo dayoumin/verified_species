@@ -467,28 +467,19 @@ def process_file(file_path, korean_mode=False):
         if file_extension in ['.xlsx', '.xls']:
             # 엑셀 파일 처리
             try:
-                # 헤더가 있는지 확인 시도
-                df_sample = pd.read_excel(file_path, nrows=5)
-                print(f"[Info Bridge] 헤더 식별됨: '{df_sample.columns[0]}'")
+                # 현재 처리 로직에서는 데이터 일관성을 위해 모든 파일을 헤더 없이 읽도록 수정
+                # 기본적으로 header=None으로 설정하여 첫 번째 행부터 데이터로 처리
+                print(f"[Info Bridge] 모든 파일을 헤더 없이 처리합니다.")
                 
                 # Excel 파일인 경우
                 if file_extension in ['.xlsx', '.xls']:
                     try:
-                        # 미생물 파일인 경우 header=None으로 읽어서 첫 번째 행도 데이터로 처리
-                        file_basename = os.path.basename(file_path).lower()
-                        is_microbe_file = '미생물' in file_basename
-                        if is_microbe_file:
-                            df = pd.read_excel(file_path, header=None)
-                            print(f"[Debug Bridge] 미생물 파일은 header=None으로 로드함. 콜럼: {list(df.columns)}")
-                            print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
-                            has_header = False  # 헤더가 없는 것으로 처리
-                            print(f"[Info Bridge] 미생물 파일은 헤더 없이 처리합니다.")
-                        else:
-                            df = pd.read_excel(file_path)
-                            print(f"[Debug Bridge] DataFrame 로드 성공. 콜럼: {list(df.columns)}")
-                            print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
-                            has_header = True  # 기본적으로 헤더가 있다고 가정
-                            print(f"[Info Bridge] Excel 파일에 헤더가 있습니다.")
+                        # 모든 파일을 header=None으로 읽어서 첫 번째 행도 데이터로 처리
+                        df = pd.read_excel(file_path, header=None)
+                        print(f"[Debug Bridge] 파일을 header=None으로 로드함. 콜럼: {list(df.columns)}")
+                        print(f"[Debug Bridge] DataFrame 행 수: {len(df)}")
+                        has_header = False  # 헤더가 없는 것으로 처리
+                        print(f"[Info Bridge] Excel 파일은 헤더 없이 처리합니다.")
                     except Exception as e:
                         print(f"[Error Bridge] 엑셀 파일 처리 중 오류: {e}")
                         # 헤더 없이 다시 시도
@@ -655,9 +646,10 @@ def process_file(file_path, korean_mode=False):
                 # 헤더가 있는지 확인
                 df_sample = pd.read_csv(file_path, nrows=5, encoding='utf-8')
                 
-                # 헤더가 있는 것으로 간주
-                df = pd.read_csv(file_path, encoding='utf-8')
-                print(f"[Debug Bridge] CSV DataFrame 행 수: {len(df)}")
+                # CSV 파일인 경우: header=None으로 설정하여 첫 번째 행도 데이터로 처리
+                df = pd.read_csv(file_path, header=None)
+                print(f"[Debug Bridge] CSV 파일을 header=None으로 로드함. 열 목록: {list(df.columns)}")
+                has_header = False  # 헤더가 없는 것으로 처리
                 
                 # 한글명 모드 처리
                 if korean_mode and len(df.columns) >= 2:
@@ -997,81 +989,8 @@ def get_wiki_summary(search_term: str) -> str:
     return original_get_wiki_summary(search_term)
 
 
-def process_col_file(file_path: str) -> List[str]:
-    """
-    COL 파일에서 학명을 추출하는 브릿지 함수
-    
-    Args:
-        file_path: 처리할 파일 경로
-        
-    Returns:
-        추출된 학명 목록
-    """
-    print(f"[Info Bridge] COL 파일 처리 시작: {file_path}")
-    
-    try:
-        # 파일 확장자 확인
-        file_ext = os.path.splitext(file_path)[1].lower()
-        
-        if file_ext == '.csv':
-            # CSV 파일 처리
-            df = pd.read_csv(file_path, encoding='utf-8')
-        elif file_ext in ['.xlsx', '.xls']:
-            # Excel 파일 처리
-            df = pd.read_excel(file_path)
-        else:
-            print(f"[Error Bridge] 지원되지 않는 파일 형식: {file_ext}")
-            return []
-        
-        # 데이터프레임 열 이름 확인
-        print(f"[Debug Bridge] 파일 열 목록: {df.columns.tolist()}")
-        
-        # 학명 열 찾기 (다양한 열 이름 시도)
-        scientific_name_columns = ['scientific_name', 'scientific name', 'scientificname', 
-                                 '학명', 'scientific', 'name', 'species', 'taxon']
-        
-        # 열 이름 대소문자 구분 없이 비교
-        found_column = None
-        for col in df.columns:
-            if col.lower() in [c.lower() for c in scientific_name_columns]:
-                found_column = col
-                break
-        
-        if found_column:
-            print(f"[Info Bridge] 학명 열 발견: {found_column}")
-            # 학명 열에서 값 추출 (NaN 제외)
-            names_list = df[found_column].dropna().astype(str).tolist()
-            
-            # 빈 문자열 제거
-            names_list = [name.strip() for name in names_list if name.strip()]
-            
-            print(f"[Info Bridge] 추출된 학명 수: {len(names_list)}")
-            if names_list:
-                print(f"[Debug Bridge] 첫 5개 학명 샘플: {names_list[:min(5, len(names_list))]}")
-            
-            return names_list
-        else:
-            # 학명 열을 찾지 못한 경우, 첫 번째 열 사용 시도
-            if len(df.columns) > 0:
-                print(f"[Warning Bridge] 학명 열을 찾지 못해 첫 번째 열({df.columns[0]}) 사용")
-                names_list = df[df.columns[0]].dropna().astype(str).tolist()
-                names_list = [name.strip() for name in names_list if name.strip()]
-                
-                print(f"[Info Bridge] 추출된 학명 수: {len(names_list)}")
-                if names_list:
-                    print(f"[Debug Bridge] 첫 5개 학명 샘플: {names_list[:min(5, len(names_list))]}")
-                
-                return names_list
-            else:
-                print("[Error Bridge] 데이터프레임에 열이 없습니다.")
-                return []
-    
-    except Exception as e:
-        print(f"[Error Bridge] COL 파일 처리 중 오류 발생: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
+# process_col_file 함수는 더 이상 사용되지 않으므로 제거하였습니다.
+# 통합된 process_file 함수로 대체되었습니다.
 
 async def process_batch(names: List[str], callback: Callable[[Dict[str, Any]], None]) -> List[Dict[str, Any]]:
     """

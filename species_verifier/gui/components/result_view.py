@@ -276,13 +276,15 @@ class ResultTreeview(BaseResultView):
         else:
             display_summary = wiki_summary or '-'
         
-        # 태그 결정 (상태에 따라) - 더 엄격한 검증 로직 적용
-        # 기본적으로 검증 실패로 간주
-        is_verified = False
+        # 태그 결정 (상태에 따라)
         tag = 'unverified'
         
-        # 'correct name'이 포함된 경우에만 검증 성공으로 간주
-        if 'correct' in str(status).lower() and valid_name and valid_name != '-' and valid_name != '유효하지 않음':
+        # 원본 is_verified 값을 우선 사용하고, 그 다음 status 문자열로 판단
+        if is_verified:
+            # 원본 검증 결과가 True이면 verified 태그 적용
+            tag = 'verified'
+        # 원본 is_verified가 False지만 status에 'correct'가 있으면 검증된 것으로 간주
+        elif 'correct' in str(status).lower() and valid_name and valid_name != '-' and valid_name != '유효하지 않음':
             is_verified = True
             tag = 'verified'
         # 동의어인 경우 주의 표시
@@ -292,6 +294,9 @@ class ResultTreeview(BaseResultView):
         elif '검증 실패' in str(status) or '유효하지 않음' in str(valid_name) or '입력 오류' in str(status):
             is_verified = False
             tag = 'unverified'
+        
+        # 디버그 로그 추가
+        print(f"[Debug Microbe Result] 입력명: {input_name}, 검증결과: {is_verified}, 상태: {status}")
             
         # 아이템 추가 (수정: display_name 사용)
         self.tree.insert("", insert_at_index, text=input_name, values=(
@@ -311,12 +316,16 @@ class ResultTreeview(BaseResultView):
             result: 표시할 결과 (딕셔너리 형태)
             insert_at_index: 삽입 위치 (기본값: 맨 끝)
         """
-        input_name = result.get('input_name', '-') # COL API는 입력명을 반환하지 않으므로, 필요시 외부에서 추가 필요
-        valid_name = result.get('학명', '-') # COL 결과 키에 맞게 수정
-        col_status = result.get('COL 상태', '-')
-        col_id = result.get('COL ID', '-')
-        col_url = result.get('COL URL', '-')
-        wiki_summary = result.get('심층분석 결과', '-')
+        # 디버그 로그 추가
+        print(f"[Debug COL Result] 원본 결과: {result}")
+        
+        # 백엔드에서 제공한 키 사용
+        input_name = result.get('input_name', '-')
+        valid_name = result.get('valid_name', result.get('학명', '-')) # 백엔드 키 우선, UI 키는 대체용
+        col_status = result.get('status', result.get('COL 상태', '-'))
+        col_id = result.get('col_id', result.get('COL ID', '-'))
+        col_url = result.get('col_url', result.get('COL URL', '-'))
+        wiki_summary = result.get('summary', result.get('심층분석 결과', '-'))
         
         # 요약이 너무 길면 자르기
         if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
@@ -324,29 +333,26 @@ class ResultTreeview(BaseResultView):
         else:
             display_summary = wiki_summary or '-'
         
-        # 태그 결정 (COL 상태에 따라) - 더 엄격한 검증 로직 적용
-        # 기본적으로 검증 실패로 간주
-        is_verified = False
-        tag = 'unverified'
+        # 중요: 백엔드에서 제공하는 is_verified 값을 우선 사용
+        is_verified = result.get('is_verified', False)
         
-        # 검증 성공 조건 강화: 상태가 'accepted'이고 유효한 학명이 있는 경우에만 검증 성공으로 간주
-        if (col_status.lower() == 'accepted' and 
-            valid_name and valid_name != '-' and 
-            result.get('matched', False) and 
-            col_id and col_id != '-'):
-            is_verified = True
+        # 백엔드 is_verified가 없는 경우, status 기반으로 판단
+        if 'is_verified' not in result:
+            # 검증 성공 조건: 상태가 'accepted' 또는 'provisionally accepted'이면 검증 성공
+            is_verified = col_status.lower() in ['accepted', 'provisionally accepted']
+            
+            # 추가 디버그 로그
+            print(f"[Debug COL Result] 백엔드 is_verified 없음, status에 따라 계산: {col_status} -> {is_verified}")
+        else:
+            # 디버그 로그
+            print(f"[Debug COL Result] 백엔드 is_verified 값 사용: {is_verified}")
+        
+        # 태그 결정
+        if is_verified:
             tag = 'verified'
-        # 동의어인 경우 주의 표시
-        elif 'synonym' in col_status.lower() or 'ambiguous' in col_status.lower():
+        elif 'synonym' in str(col_status).lower() or 'ambiguous' in str(col_status).lower():
             tag = 'caution'
-            is_verified = False
-        # 검증 실패 상태 확인 - 더 명확한 조건 추가
-        elif (col_status == '-' or 
-              col_status.lower() == 'unknown' or 
-              not result.get('matched', False) or 
-              not valid_name or 
-              valid_name == '-'):
-            is_verified = False
+        else:
             tag = 'unverified'
         
         # 아이템 추가

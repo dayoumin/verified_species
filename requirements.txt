@@ -1,1 +1,7 @@
 requests
+customtkinter
+pillow
+pandas
+wikipedia
+google-generativeai
+pyworms

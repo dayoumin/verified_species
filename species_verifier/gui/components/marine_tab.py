@@ -22,7 +22,7 @@ class MarineTabFrame(BaseTabFrame):
         font: Any,
         bold_font: Any,
         placeholder_text: str = "해양 생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
-        max_file_processing_limit: int = 1000,
+        max_file_processing_limit: int = 3000,
         max_direct_input_limit: int = 20,  # 직접 입력 한계 추가
         direct_export_threshold: int = 100,
         **kwargs

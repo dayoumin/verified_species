@@ -331,9 +331,9 @@ class SpeciesVerifierApp(ctk.CTk):
         # 탭 변경 시 테이블 업데이트 콜백 연결
         self.tab_view.configure(command=self._on_tab_change)
     
-    # --- 해양생물 탭 콜백 함수 ---
-    def _marine_search(self, input_text: str, tab_name: str = "marine"):
-        """해양생물 검색 콜백"""
+    # --- 통합 검색 함수 ---
+    def _search_species(self, input_text: str, tab_name: str = "marine"):
+        """통합 학명 검색 콜백"""
         if self.is_verifying:
             self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
             return
@@ -343,35 +343,32 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 입력 문자열 처리
         input_text = input_text.strip()
-        # 여러 학명이 콤마로 구분되어 있는지 확인
-        if "," in input_text:
-            # 콤마로 구분된 목록 처리
-            names_list = [name.strip() for name in input_text.split(",") if name.strip()]
-            if names_list:
-                self._start_verification_thread(names_list)
-        else:
-            # 학명 처리
-            self._start_verification_thread([input_text])
+        # 모든 입력을 콤마로 구분된 리스트로 처리 (LPSN 방식으로 통일)
+        names_list = [name.strip() for name in input_text.split(",") if name.strip()]
+        
+        if not names_list:
+            return
+        
+        # 탭에 따라 적절한 검증 스레드 시작
+        if tab_name == "marine":
+            self._start_verification_thread(names_list)
+        elif tab_name == "microbe":
+            # LPSN 탭은 context도 전달
+            self._start_microbe_verification_thread(names_list, context=names_list)
+        elif tab_name == "col":
+            self._start_col_verification_thread(names_list)
+    
+    # --- 해양생물 탭 콜백 함수 ---
+    def _marine_search(self, input_text: str, tab_name: str = "marine"):
+        """해양생물 검색 콜백"""
+        self._search_species(input_text, tab_name="marine")
 
     # --- COL(통합생물) 탭 콜백 함수 ---
     def _col_search(self, input_text: str, tab_name: str = "col"):
         """COL 통합생물 검색 콜백"""
-        if self.is_verifying:
-            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
-            return
-        if not input_text:
-            return
-        input_text = input_text.strip()
-        # 여러 학명이 콤마로 구분되어 있는지 확인
-        if "," in input_text:
-            names_list = [name.strip() for name in input_text.split(",") if name.strip()]
-            if names_list:
-                self._start_col_verification_thread(names_list)
-        else:
-            # 학명 처리
-            self._start_col_verification_thread([input_text])
+        self._search_species(input_text, tab_name="col")
 
-    def _col_file_browse(self) -> Optional[str]:
+    def _col_file_browse(self, event=None) -> Optional[str]:
         """COL 파일 선택 콜백"""
         file_path = filedialog.askopenfilename(
             title="COL 학명 파일 선택",
@@ -390,8 +387,8 @@ class SpeciesVerifierApp(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
-        # 파일 처리 스레드 시작
-        threading.Thread(target=self._process_col_file, args=(file_path,), daemon=True).start()
+        # 파일 처리 스레드 시작 - 통합된 함수 사용
+        threading.Thread(target=self._process_file, args=(file_path, "col"), daemon=True).start()
 
     def _setup_cancel_button(self):
         """취소 버튼 설정"""
@@ -533,9 +530,9 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_verifying = True
         
         try:
-            # 브릿지 모듈의 함수 호출 - COL 파일 처리용 함수 사용
-            from species_verifier.gui.bridge import process_col_file
-            names_list = process_col_file(file_path)
+            # 브릿지 모듈의 함수 호출 - 통일된 파일 처리 함수 사용
+            from species_verifier.gui.bridge import process_file
+            names_list = process_file(file_path, korean_mode=False)
             
             # 파일에서 추출한 학명 수 저장 (진행률 표시용)
             self.current_file_item_count = len(names_list) if names_list else 0
@@ -603,22 +600,7 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 미생물 탭 콜백 함수 ---
     def _microbe_search(self, input_text: str, tab_name: str = "microbe"):
         """미생물 검색 콜백"""
-        if self.is_verifying:
-            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
-            return
-            
-        if not input_text:
-            return
-            
-        # 입력 문자열 처리
-        input_text = input_text.strip()
-        # 여러 학명이 콤마로 구분되어 있는지 확인
-        names_list = [name.strip() for name in input_text.split(",") if name.strip()]
-        
-        if names_list:
-            # 직접 입력 컨텍스트(학명 리스트) 전달
-            self._start_microbe_verification_thread(names_list, context=names_list) 
-        # else: 단일 학명도 리스트로 처리되므로 별도 분기 불필요
+        self._search_species(input_text, tab_name="microbe")
     
     def _microbe_file_browse(self) -> Optional[str]:
         """미생물 파일 선택 콜백"""
@@ -767,8 +749,8 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 헤더 영역이고 특정 컬럼인 경우 툴팁 표시
         if region == "heading":
-            # --- 디버깅 로그 추가 ---
-            print(f"[Debug Tooltip] Hovering header region. Identified column_id: {column_id}") 
+            # --- 디버깅 로그 주석 처리 (사용자 요청) ---
+            # print(f"[Debug Tooltip] Hovering header region. Identified column_id: {column_id}")
             
             # --- 수정: 컬럼 ID와 툴팁 매핑 확인 및 조정 ---
             # Treeview 컬럼 인덱스는 #0부터 시작하지만, identify_column은 #1부터 반환하는 경향이 있음.
@@ -1007,27 +989,79 @@ class SpeciesVerifierApp(ctk.CTk):
             if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'focus_entry'):
                  self.after(650, self.microbe_tab.focus_entry) # focus_entry 메서드 호출
 
-    def _process_file(self, file_path: str):
-        """해양생물 파일 처리"""
-        # 브릿지 모듈의 함수 호출
-        names_list = process_file(file_path)
+    def _process_file(self, file_path: str, tab_name: str = "marine"):
+        """파일 처리 (모든 탭 통합)
         
-        if names_list:
-            print(f"[Info App] 파일에서 추출된 학명 수: {len(names_list)}")
-            print(f"[Info App] 학명 샘플: {names_list[:min(5, len(names_list))]}")
-            
-            # 전체 목록 처리 확인
-            total_names = len(names_list)
-            if total_names > 10:
-                print(f"[Info App] 주의: 총 {total_names}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
-            
-            self._start_verification_thread(names_list)
-        else:
+        Args:
+            file_path: 처리할 파일 경로
+            tab_name: 탭 이름 ('marine' 또는 'col')
+        """
+        # 이미 검증 중인지 확인
+        if self.is_verifying:
+            print(f"[Warning] 이미 검증 작업이 진행 중입니다.")
             self.after(0, lambda: self.show_centered_message(
-                "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
+                "warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요."
+            ))
+            return
+            
+        # 취소 상태 초기화
+        self.is_cancelled = False
+        
+        # 검증 중 플래그 설정
+        self.is_verifying = True
+        
+        try:
+            # 브릿지 모듈의 함수 호출
+            from species_verifier.gui.bridge import process_file
+            names_list = process_file(file_path, korean_mode=(tab_name == "marine"))
+            
+            # 파일에서 추출한 학명 수 저장 (진행률 표시용)
+            self.current_file_item_count = len(names_list) if names_list else 0
+            # 탭에 맞는 변수에도 저장
+            if tab_name == "marine":
+                self.marine_file_item_count = len(names_list) if names_list else 0
+                print(f"[Debug] 해양생물 파일에서 추출된 학명 수: {self.marine_file_item_count}")
+            elif tab_name == "col":
+                self.col_file_item_count = len(names_list) if names_list else 0
+                print(f"[Debug] COL 파일에서 추출된 학명 수: {self.col_file_item_count}")
+            
+            # 취소 여부 확인
+            if self.is_cancelled:
+                print(f"[Info] {tab_name} 파일 처리 중 취소 요청 받음")
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
+                return
+            
+            if names_list and len(names_list) > 0:
+                # 전체 목록 처리 확인
+                total_names = len(names_list)
+                if total_names > 10:
+                    print(f"[Info App] 주의: 총 {total_names}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
+                
+                # 탭에 맞는 검증 스레드 시작
+                if tab_name == "marine":
+                    self._start_verification_thread(names_list)
+                elif tab_name == "col":
+                    self._start_col_verification_thread(names_list)
+            else:
+                self.after(0, lambda: self.show_centered_message(
+                    "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
+                ))
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
+        
+        except Exception as e:
+            print(f"[Error] {tab_name} 파일 처리 중 오류 발생: {e}")
+            import traceback
+            traceback.print_exc()
+            self.after(0, lambda: self.show_centered_message(
+                "error", "파일 처리 오류", f"파일 처리 중 오류가 발생했습니다.\n{str(e)}"
             ))
             self.after(0, lambda: self._reset_status_ui())
             self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
     
     def _process_microbe_file(self, file_path: str):
         """미생물 파일 처리"""

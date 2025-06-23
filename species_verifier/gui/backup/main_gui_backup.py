@@ -281,7 +281,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.footer_label.grid(row=0, column=0, pady=(0, 5))
 
         # --- 입력 프레임 위젯 ("해양생물" 탭) ---
-        self.single_entry_label = ctk.CTkLabel(self.input_frame, text="학명/국명 입력:", font=self.default_font)
+        self.single_entry_label = ctk.CTkLabel(self.input_frame, text="학명 입력:", font=self.default_font)
         self.single_entry_label.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="w")
         
         self.single_entry = ctk.CTkEntry(self.input_frame, placeholder_text="예: Homo sapiens, Gadus morhua", font=self.default_font)

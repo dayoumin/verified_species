@@ -7,7 +7,7 @@
 import re
 
 def clean_scientific_name(input_name):
-    """학명 또는 국명에서 불필요한 특수문자를 제거하고 공백을 정리합니다."""
+    """학명에서 불필요한 특수문자를 제거하고 공백을 정리합니다."""
     if not input_name or not isinstance(input_name, str):
         return input_name
 
