@@ -73,43 +73,49 @@ class MicrobeTabFrame(BaseTabFrame):
         self.tab_name = "미생물 (LPSN)"
 
     def _create_widgets(self, **kwargs):
-        """위젯 생성 및 배치"""
+        """위젯 생성 및 배치 - 개선된 디자인"""
+        
         self.grid_columnconfigure(0, weight=1)
-        # 행 간격 조정
         self.grid_rowconfigure(0, weight=0) 
         self.grid_rowconfigure(1, weight=0) 
         self.grid_rowconfigure(2, weight=0) 
-        self.grid_rowconfigure(3, weight=0) 
-        self.grid_rowconfigure(4, weight=0) 
         
-        # 1. 직접 입력 레이블 + 개수 프레임
-        text_label_frame = ctk.CTkFrame(self, fg_color="transparent")
-        text_label_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 2))
-        text_label_frame.grid_columnconfigure(0, weight=0)
-        text_label_frame.grid_columnconfigure(1, weight=0)
-        text_label_frame.grid_columnconfigure(2, weight=1)
+        # 1. 직접 입력 섹션 (배경 프레임 추가)
+        direct_input_section = ctk.CTkFrame(self, corner_radius=8)
+        direct_input_section.grid(row=0, column=0, sticky="ew", padx=15, pady=(10, 8))
+        direct_input_section.grid_columnconfigure(0, weight=1)
+        
+        # 직접 입력 헤더
+        header_frame = ctk.CTkFrame(direct_input_section, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 8))
+        header_frame.grid_columnconfigure(0, weight=0)
+        header_frame.grid_columnconfigure(1, weight=1)
+        header_frame.grid_columnconfigure(2, weight=0)
 
         ctk.CTkLabel(
-            text_label_frame,
-            text="직접 입력",
-            font=self.bold_font
+            header_frame,
+            text="🦠 직접 입력",
+            font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
+            text_color=("#1f538d", "#4a9eff")
         ).grid(row=0, column=0, sticky="w")
 
         self.text_count_label = ctk.CTkLabel(
-             text_label_frame,
-             text="",
-             font=ctk.CTkFont(family="Malgun Gothic", size=10),
-             anchor="w"
+            header_frame,
+            text="",
+            font=ctk.CTkFont(family="Malgun Gothic", size=11),
+            text_color=("gray60", "gray40")
         )
-        self.text_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+        self.text_count_label.grid(row=0, column=2, sticky="e")
 
-        # 2. 텍스트 입력 필드
+        # 텍스트 입력 필드 (높이 증가)
         self.entry = ctk.CTkTextbox(
-            self,
-            height=60,
+            direct_input_section,
+            height=80,
             font=self.font,
+            corner_radius=6,
+            border_width=1
         )
-        self.entry.grid(row=1, column=0, sticky="ew", padx=10, pady=2)
+        self.entry.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
         self.entry.insert("0.0", self.initial_text)
         self.entry.configure(text_color="gray")
         
@@ -117,70 +123,93 @@ class MicrobeTabFrame(BaseTabFrame):
         self.entry.bind("<FocusOut>", self._on_entry_focus_out)
         self.entry.bind("<KeyRelease>", self._update_input_count)
 
-        # 3. 파일 입력 레이블 + 개수 프레임
-        file_label_frame = ctk.CTkFrame(self, fg_color="transparent")
-        file_label_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(5, 2))
-        file_label_frame.grid_columnconfigure(0, weight=0)
-        file_label_frame.grid_columnconfigure(1, weight=0)
-        file_label_frame.grid_columnconfigure(2, weight=1)
+        # 2. 파일 입력 섹션 (배경 프레임 추가)
+        file_input_section = ctk.CTkFrame(self, corner_radius=8)
+        file_input_section.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
+        file_input_section.grid_columnconfigure(0, weight=1)
+
+        # 파일 입력 헤더
+        file_header_frame = ctk.CTkFrame(file_input_section, fg_color="transparent")
+        file_header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 8))
+        file_header_frame.grid_columnconfigure(0, weight=0)
+        file_header_frame.grid_columnconfigure(1, weight=1)
+        file_header_frame.grid_columnconfigure(2, weight=0)
 
         ctk.CTkLabel(
-            file_label_frame,
-            text="파일 입력",
-            font=self.bold_font
+            file_header_frame,
+            text="📁 파일 입력",
+            font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
+            text_color=("#1f538d", "#4a9eff")
         ).grid(row=0, column=0, sticky="w")
 
         self.file_count_label = ctk.CTkLabel(
-             file_label_frame,
-             text="",
-             font=ctk.CTkFont(family="Malgun Gothic", size=10),
-             anchor="w"
+            file_header_frame,
+            text="",
+            font=ctk.CTkFont(family="Malgun Gothic", size=11),
+            text_color=("gray60", "gray40")
         )
-        self.file_count_label.grid(row=0, column=1, sticky="w", padx=(5, 0))
+        self.file_count_label.grid(row=0, column=2, sticky="e")
 
-        # 4. 파일 입력 프레임
-        file_input_frame = ctk.CTkFrame(self)
-        file_input_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=2)
-        file_input_frame.grid_columnconfigure(0, weight=1)
+        # 파일 입력 컨트롤
+        file_controls_frame = ctk.CTkFrame(file_input_section, fg_color="transparent")
+        file_controls_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
+        file_controls_frame.grid_columnconfigure(0, weight=1)
 
         self.file_path_entry = ctk.CTkEntry(
-            file_input_frame,
+            file_controls_frame,
             textvariable=self.file_path_var,
             font=self.font,
-            placeholder_text="파일 경로...",
-            state="readonly"
+            placeholder_text="파일을 선택하세요... (CSV, XLSX, TXT 지원)",
+            state="readonly",
+            height=35,
+            corner_radius=6
         )
-        self.file_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5), pady=2) # 프레임 내부 pady
+        self.file_path_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        # 버튼 컨테이너
+        button_frame = ctk.CTkFrame(file_controls_frame, fg_color="transparent")
+        button_frame.grid(row=0, column=1)
 
         self.file_browse_button = ctk.CTkButton(
-            file_input_frame,
-            text="찾기",
-            width=60,
-            font=self.bold_font,
+            button_frame,
+            text="📂 찾기",
+            width=80,
+            height=35,
+            font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),
+            corner_radius=6,
             command=self._on_file_browse_click
         )
-        self.file_browse_button.grid(row=0, column=1, padx=(0, 0), pady=2) # 프레임 내부 pady
+        self.file_browse_button.grid(row=0, column=0, padx=(0, 5))
         
         self.file_clear_button = ctk.CTkButton(
-            file_input_frame,
-            text="지우기",
-            width=60,
-            font=self.bold_font,
+            button_frame,
+            text="🗑️ 지우기",
+            width=80,
+            height=35,
+            font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),
+            corner_radius=6,
+            fg_color=("gray70", "gray30"),
+            hover_color=("gray60", "gray40"),
             command=self._on_file_clear_click
         )
-        self.file_clear_button.grid(row=0, column=2, padx=(2, 0), pady=2) # 프레임 내부 pady
+        self.file_clear_button.grid(row=0, column=1)
         
         self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 5. 통합 검증 버튼
+        # 3. 검증 버튼 (적당한 크기로 중앙 배치)
         self.verify_button = ctk.CTkButton(
             self,
-            text="검증",
-            font=self.bold_font,
+            text="🔬 검증 시작",
+            font=ctk.CTkFont(family="Malgun Gothic", size=16, weight="bold"),
+            width=200,
+            height=45,
+            corner_radius=8,
+            fg_color=("#1f538d", "#4a9eff"),
+            hover_color=("#174a7a", "#3d8ae6"),
             command=self._on_verify_click,
             state="disabled"
         )
-        self.verify_button.grid(row=4, column=0, pady=(5, 5))
+        self.verify_button.grid(row=2, column=0, pady=(0, 15))
         
         self._update_input_count()
 
