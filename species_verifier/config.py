@@ -53,6 +53,7 @@ class APIConfig:
     
     # API 요청 지연 시간 (추가)
     REQUEST_DELAY = 0.5 # 각 API 호출 사이의 지연 시간 (초)
+BATCH_DELAY = 2.0 # 배치간 지연 시간 (초) - 대량 처리 시 안정성 향상
 
 class UIConfig:
     """사용자 인터페이스 관련 설정"""

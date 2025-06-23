@@ -283,6 +283,8 @@ def verify_single_microbe_lpsn(microbe_name):
         print(f"[Info LPSN Core] 직접 접근 URL: {direct_species_url}")
         
         try:
+            # LPSN 서버 부하 방지를 위한 지연 시간 추가
+            time.sleep(1.0)
             # 직접 URL 접근 시도
             direct_response = requests.get(direct_species_url, headers=headers, timeout=10)
             direct_response.raise_for_status()  # 404 등의 오류 확인
@@ -501,6 +503,8 @@ def verify_col_species(col_names_list, result_callback=None):
             base_url = "https://api.catalogueoflife.org/"
             search_url = f"{base_url}dataset/3LR/nameusage/search?q={quote(name)}&limit=1"
             
+            # COL API 서버 부하 방지를 위한 지연 시간 추가
+            time.sleep(0.5)
             # COL API 요청
             response = requests.get(search_url, timeout=10)
             response.raise_for_status()

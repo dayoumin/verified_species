@@ -1,4 +1,5 @@
 import requests
+import time
 from typing import Dict, Any
 
 def verify_col_species(scientific_name: str) -> Dict[str, Any]:
@@ -14,6 +15,8 @@ def verify_col_species(scientific_name: str) -> Dict[str, Any]:
     url = "https://api.catalogueoflife.org/nameusage/search"
     params = {"q": scientific_name, "limit": 1, "type": "EXACT"}
     try:
+        # API 서버 부하 방지를 위한 지연 시간 추가
+        time.sleep(0.5)
         resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
