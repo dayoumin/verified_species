@@ -5,6 +5,8 @@
 # Imports will be added later 
 
 import re
+import os
+import pandas as pd
 
 def clean_scientific_name(input_name):
     """학명에서 불필요한 특수문자를 제거하고 공백을 정리합니다."""
@@ -21,6 +23,45 @@ def clean_scientific_name(input_name):
     # if cleaned_name != input_name:
     #     print(f"[Info] 입력 정리: '{input_name}' -> '{cleaned_name}'")
     return cleaned_name
+
+def calculate_file_entries(file_path: str, tab_type: str = "") -> int:
+    """주어진 파일 경로에서 항목 개수를 추정합니다. (첫 번째 열 기준)"""
+    if not file_path or not os.path.exists(file_path):
+        return 0
+        
+    count = 0
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == '.csv':
+            df = pd.read_csv(file_path, header=None, usecols=[0], skipinitialspace=True)
+            count = df[0].notna().sum()
+        elif ext == '.xlsx':
+            df = pd.read_excel(file_path, header=None, usecols=[0])
+            count = df[0].notna().sum()
+        elif ext == '.txt':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                lines = [line.strip() for line in f if line.strip()] # 비어있지 않은 줄만 계산
+                count = len(lines)
+        else:
+            if tab_type:
+                print(f"[Warning {tab_type}] Unsupported file type for count estimation: {ext}")
+            else:
+                print(f"[Warning] Unsupported file type for count estimation: {ext}")
+            
+    except pd.errors.EmptyDataError:
+        if tab_type:
+            print(f"[Info {tab_type}] File is empty: {file_path}")
+        else:
+            print(f"[Info] File is empty: {file_path}")
+        count = 0 # 빈 파일
+    except Exception as e:
+        if tab_type:
+            print(f"[Error {tab_type}] Failed to estimate entries in file {file_path}: {e}")
+        else:
+            print(f"[Error] Failed to estimate entries in file {file_path}: {e}")
+        count = 0 
+        
+    return count
 
 def create_basic_marine_result(input_name, scientific_name, is_verified, worms_status):
     """기본적인 해양생물 결과 딕셔너리를 생성합니다."""

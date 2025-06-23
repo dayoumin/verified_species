@@ -28,10 +28,7 @@ except ImportError as e:
     get_default_taxonomy = lambda x: "정보 없음"
     is_korean = lambda x: False # Fallback
 
-# verify_microbe_name 함수 정의 (경고 제거를 위해)
-def verify_microbe_name(name):
-    """verify_microbe_species 함수로 대체됨"""
-    return None
+# 사용되지 않는 함수 제거됨
 
 # clean_scientific_name 함수에 check_scientific_name 별칭 추가
 check_scientific_name = clean_scientific_name

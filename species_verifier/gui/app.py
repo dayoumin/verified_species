@@ -56,7 +56,7 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 디버그 로그: 초기 self ID 및 메인 스레드 ID 기록
         self.main_thread_id = threading.get_ident()
-        print(f"[Debug Init] Initial self ID: {id(self)}, Type: {type(self)}, Main Thread ID: {self.main_thread_id}")
+        # 초기화 완료
         
         # 플레이스홀더 텍스트 설정
         self.placeholder_focused = "예: Homo sapiens, Gadus morhua"
@@ -219,13 +219,13 @@ class SpeciesVerifierApp(ctk.CTk):
         self.result_tree_microbe.widget.grid(row=2, column=0, sticky="nsew", padx=5, pady=(0, 5))
         
         # --- COL(통합생물) 탭 ---
-        print("[DEBUG] COL 탭 컨텐츠 위젯 생성 시작")
+        # COL 탭 컨텐츠 위젯 생성
         col_tab_content = self.tab_view.tab("담수 등 전체생물(COL)")  # "통합생물(COL)"에서 변경
         col_tab_content.grid_columnconfigure(0, weight=1)
         col_tab_content.grid_rowconfigure(0, weight=0)
         col_tab_content.grid_rowconfigure(1, weight=0) # 추가: 안내 레이블 공간
         col_tab_content.grid_rowconfigure(2, weight=1)
-        print("[DEBUG] ColTabFrame 인스턴스 생성 시도")
+        
         self.col_tab = ColTabFrame(
             col_tab_content,
             font=self.default_font,
@@ -235,9 +235,7 @@ class SpeciesVerifierApp(ctk.CTk):
             max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT,
             direct_export_threshold=self.DIRECT_EXPORT_THRESHOLD
         )
-        print("[DEBUG] ColTabFrame 인스턴스 생성 완료, grid 배치 시도")
         self.col_tab.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
-        print("[DEBUG] ColTabFrame grid 배치 완료")
 
         # 안내 레이블 추가 및 배치 (COL 탭)
         self.col_info_label = ctk.CTkLabel(
@@ -378,7 +376,7 @@ class SpeciesVerifierApp(ctk.CTk):
         if hasattr(self.status_bar, 'cancel_button'):
             self.status_bar.cancel_button.configure(state="normal")
             self.status_bar.set_cancel_command(self._cancel_operation)
-        print("[Debug App] 취소 버튼 활성화 및 기능 설정 완료")
+        # 취소 버튼 설정 완료
     
     def _start_col_verification_thread(self, verification_list):
         # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)

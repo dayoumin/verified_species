@@ -11,6 +11,7 @@ import customtkinter as ctk
 import pandas as pd
 
 from species_verifier.gui.components.base import BaseTabFrame
+from species_verifier.utils.helpers import calculate_file_entries
 
 class ColTabFrame(BaseTabFrame):
     """통합생물(COL) 탭 프레임 컴포넌트"""
@@ -25,7 +26,6 @@ class ColTabFrame(BaseTabFrame):
         direct_export_threshold: int = 100,
         **kwargs
     ):
-        print("[DEBUG] ColTabFrame.__init__ 진입")
         self.font = font
         self.bold_font = bold_font
         self.placeholder_text = placeholder_text
@@ -63,8 +63,6 @@ class ColTabFrame(BaseTabFrame):
 
     def _create_widgets(self, **kwargs):
         """위젯 생성 및 배치 - 개선된 디자인"""
-        print("[DEBUG] ColTabFrame._create_widgets 진입")
-        
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=0) 
         self.grid_rowconfigure(1, weight=0) 
@@ -243,36 +241,7 @@ class ColTabFrame(BaseTabFrame):
 
     def _calculate_file_entries(self, file_path: str) -> int:
         """주어진 파일 경로에서 항목 개수를 추정합니다. (첫 번째 열 기준)"""
-        if not file_path or not os.path.exists(file_path):
-            return 0
-            
-        count = 0
-        try:
-            ext = os.path.splitext(file_path)[1].lower()
-            if ext == '.csv':
-                df = pd.read_csv(file_path, header=None, usecols=[0], skipinitialspace=True)
-                count = df[0].notna().sum()
-            elif ext == '.xlsx':
-                df = pd.read_excel(file_path, header=None, usecols=[0])
-                count = df[0].notna().sum()
-            elif ext == '.txt':
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    lines = [line.strip() for line in f if line.strip()] # 비어있지 않은 줄만 계산
-                    count = len(lines)
-            else:
-                print(f"[Warning Col] Unsupported file type for count estimation: {ext}")
-                # 지원하지 않는 형식은 0 반환 또는 다른 방식 고려
-                
-        except pd.errors.EmptyDataError:
-            print(f"[Info Col] File is empty: {file_path}")
-            count = 0 # 빈 파일
-        except Exception as e:
-            print(f"[Error Col] Failed to estimate entries in file {file_path}: {e}")
-            # 오류 발생 시 0 반환 (또는 사용자에게 알림)
-            count = 0 
-            
-        print(f"[Debug Col] Estimated entries in file {os.path.basename(file_path)}: {count}")
-        return count
+        return calculate_file_entries(file_path, "Col")
 
     def _on_entry_focus_in(self, event=None):
         if self.entry.get("0.0", "end-1c") == self.initial_text:
@@ -342,4 +311,3 @@ class ColTabFrame(BaseTabFrame):
         self.file_path_var.set("")
         self.file_entry_count = 0
         self._update_input_count()
-        print("[Debug Col] 전체생물 탭 파일 정보 초기화 완료")
