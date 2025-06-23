@@ -30,9 +30,9 @@ class AppConfig:
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE = os.getenv("LOG_FILE", "species_verifier.log")
     
-    # 데이터 경로
-    DATA_DIR = Path(__file__).parent / "data"
-    KOREAN_MAPPINGS_FILE = DATA_DIR / "korean_mappings.json"
+    # 데이터 경로 (더 이상 사용하지 않음 - 국명 검색 중단)
+    # DATA_DIR = Path(__file__).parent / "data"
+    # KOREAN_MAPPINGS_FILE = DATA_DIR / "korean_mappings.json"
 
 class APIConfig:
     """외부 API 연결 설정"""

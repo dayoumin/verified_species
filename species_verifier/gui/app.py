@@ -112,30 +112,9 @@ class SpeciesVerifierApp(ctk.CTk):
         self.header_frame.grid_columnconfigure(0, weight=1)
         self.header_frame.grid_columnconfigure(1, weight=0)
 
-        # 이미지 로드 및 배치 (기존 로직)
-        try:
-            # 이미지 파일 경로 설정 (실제 경로로 수정)
-            image_path = os.path.join(os.path.dirname(__file__), "..", "assets", "images", "header_logo.png")
-            if os.path.exists(image_path):
-                # PIL로 이미지 열기
-                pil_image = Image.open(image_path)
-                # CTkImage 생성 (크기 조절 가능, 예: height=50)
-                ctk_image = CTkImage(light_image=pil_image, dark_image=pil_image, size=(pil_image.width * 50 // pil_image.height, 50))
-
-                # 이미지를 표시할 라벨 생성
-                image_label = ctk.CTkLabel(self.header_frame, image=ctk_image, text="")
-                # 헤더 프레임 중앙에 배치 (0번 컬럼)
-                image_label.grid(row=0, column=0, padx=10, pady=5, sticky="w") # 왼쪽 정렬로 변경
-            else:
-                print(f"[Warning] Header image not found at: {image_path}")
-                # 이미지가 없을 경우 텍스트 라벨 표시 (수정: 텍스트 및 폰트)
-                fallback_label = ctk.CTkLabel(self.header_frame, text="국립수산과학원 학명검증기", font=self.header_text_font)
-                fallback_label.grid(row=0, column=0, padx=10, pady=10, sticky="w") # 왼쪽 정렬
-        except Exception as e:
-            print(f"[Error] Failed to load header image: {e}")
-            # 오류 발생 시 텍스트 라벨 표시 (수정: 텍스트 및 폰트)
-            fallback_label = ctk.CTkLabel(self.header_frame, text="국립수산과학원 학명검증기", font=self.header_text_font)
-            fallback_label.grid(row=0, column=0, padx=10, pady=10, sticky="w") # 왼쪽 정렬
+        # 헤더 텍스트 라벨 표시 (이미지 대신 텍스트 사용)
+        header_label = ctk.CTkLabel(self.header_frame, text="국립수산과학원 학명검증기", font=self.header_text_font)
+        header_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         # 도움말 버튼 추가 (1번 컬럼, 오른쪽 정렬)
         self.help_button = ctk.CTkButton(
