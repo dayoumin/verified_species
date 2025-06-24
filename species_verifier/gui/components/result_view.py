@@ -369,8 +369,28 @@ class ResultTreeview(BaseResultView):
         """단일 결과를 목록 맨 위에 추가하고 표시합니다."""
         if not result:
             return
+        
+        # 중복 검사: input_name을 기준으로 이미 존재하는 결과인지 확인
+        input_name = result.get('input_name', '') if isinstance(result, dict) else getattr(result, 'input_name', '')
+        
+        # 기존 결과에서 같은 input_name이 있는지 확인
+        for existing_result in self.results:
+            existing_input_name = existing_result.get('input_name', '') if isinstance(existing_result, dict) else getattr(existing_result, 'input_name', '')
+            if existing_input_name == input_name and input_name:
+                print(f"[Debug ResultView] 중복 결과 무시 ({self.tab_type}): {input_name}")
+                return
+        
+        # 트리뷰에서도 중복 확인 (추가 안전장치)
+        for item_id in self.tree.get_children():
+            tree_input_name = self.tree.item(item_id, "text")
+            if tree_input_name == input_name and input_name:
+                print(f"[Debug ResultView] 트리뷰에서 중복 결과 무시 ({self.tab_type}): {input_name}")
+                return
+        
+        # 중복이 아닌 경우에만 추가
         self.results.insert(0, result)
         self._display_result(result, insert_at_index=0)
+        print(f"[Debug ResultView] 새 결과 추가됨 ({self.tab_type}): {input_name}")
     
     def add_results(self, results: List[Any], clear_first: bool = False):
         """

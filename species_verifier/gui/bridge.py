@@ -264,9 +264,9 @@ def perform_microbe_verification(
                 if update_status:
                     update_status(f"미생물 검증 중: 전체 {len(microbe_names_list)}개 항목 처리 중...")
                 
-                # 진행률 초기 업데이트
+                # 진행률 초기 업데이트 - MicrobeVerifier에서 관리하므로 여기서는 최소한만
                 if update_progress:
-                    update_progress(0.1, 1, len(microbe_names_list))
+                    update_progress(0.0)
                 
                 # 취소 여부 한 번 더 확인
                 if check_cancelled and check_cancelled():
@@ -281,10 +281,6 @@ def perform_microbe_verification(
                     print("[Info Bridge] 검증 취소 요청 받음 - 결과 처리 전 중단")
                     return []
                 
-                # 진행률 업데이트 (80% 완료)
-                if update_progress:
-                    update_progress(0.8, int(len(microbe_names_list) * 0.8), len(microbe_names_list))
-                
                 # 결과 처리
                 if batch_results:
                     print(f"[Info Bridge] 배치 결과 개수: {len(batch_results)} / 전체 학명 수: {len(microbe_names_list)}")
@@ -292,9 +288,9 @@ def perform_microbe_verification(
                     
                     # 참고: 결과 콜백은 microbe_verifier.py에서 이미 처리되었으므로 여기서는 처리하지 않음
                 
-                # 진행률 최종 업데이트 (취소되지 않은 경우에만)
+                # 진행률 최종 업데이트 (취소되지 않은 경우에만) - MicrobeVerifier에서 이미 처리되므로 확인용
                 if update_progress and not (check_cancelled and check_cancelled()):
-                    update_progress(1.0, len(microbe_names_list), len(microbe_names_list))
+                    update_progress(1.0)
                     
             except Exception as batch_e:
                 print(f"[Error Bridge] 미생물 일괄 검증 중 오류: {batch_e}")
@@ -382,10 +378,23 @@ def process_file(file_path, korean_mode=False):
                         sample_items = df[first_col].head(5).tolist()
                         print(f"[Debug Bridge] 첫 번째 콜럼의 처음 5개 항목: {sample_items}")
                     
-                    # 미생물.xlsx 파일 특별 처리
+                    # 파일 유형 판단을 위한 파일명 및 데이터 분석
                     file_basename = os.path.basename(file_path).lower()
                     is_microbe_file = '미생물' in file_basename
-                    is_marine_file = ('gadus morhua' in str(first_col).lower() or '해양생물' in file_basename)
+                    
+                    # 해양생물 파일 판단: 파일명 또는 첫 번째 데이터 확인
+                    is_marine_file = '해양생물' in file_basename
+                    print(f"[Debug Bridge] 파일명 기반 해양생물 파일 판단: {is_marine_file}")
+                    if not is_marine_file and len(df) > 0:
+                        # 첫 번째 행의 첫 번째 컬럼 데이터 확인
+                        first_data = str(df.iloc[0, 0]).lower().strip() if len(df) > 0 else ""
+                        is_marine_file = 'gadus morhua' in first_data
+                        print(f"[Debug Bridge] 첫 번째 데이터 '{first_data}'에서 해양생물 파일 판단: {is_marine_file}")
+                        if is_marine_file:
+                            print(f"[Debug Bridge] 첫 번째 데이터 '{first_data}'에서 해양생물 파일로 판단")
+                    
+                    print(f"[Debug Bridge] 최종 해양생물 파일 판단 결과: {is_marine_file}")
+                    print(f"[Debug Bridge] 미생물 파일 판단 결과: {is_microbe_file}")
                     
                     # 미생물 파일인 경우 특별 처리
                     if is_microbe_file:
@@ -429,38 +438,37 @@ def process_file(file_path, korean_mode=False):
                     elif is_marine_file:
                         print(f"[Info Bridge] 해양생물.xlsx 파일 형식 감지, 특별 처리 적용")
                         
-                        # 수정: 'Gadus morhua'를 헤더가 아닌 첫 번째 데이터로 처리
-                        print(f"[Info Bridge] 헤더로 인식되던 'Gadus morhua'를 데이터로 처리합니다.")
-                        
-                        # 첫 번째 행을 포함하여 모든 항목 추출
+                        # 해양생물.xlsx 파일: 첫 번째 컬럼에서 모든 학명 추출
                         all_species = []
                         
-                        # 콜럼 이름이 존재하는 경우 먼저 추가
-                        if 'gadus morhua' in str(first_col).lower():
-                            # 헤더에 학명이 있는 경우 첫 번째 항목으로 추가
-                            first_col_name = str(first_col).strip()
-                            if first_col_name and ' ' in first_col_name and len(first_col_name) > 3:
-                                all_species.append(first_col_name)
-                                print(f"[Debug Bridge] 콜럼 이름을 첫 번째 항목으로 추가: {first_col_name}")
-                        
-                        # 나머지 데이터 처리
+                        # 첫 번째 컬럼의 모든 항목 추출 (첫 번째 행부터)
                         for idx, row in df.iterrows():
                             try:
+                                # 첫 번째 컬럼 값 확인
                                 value = str(row[first_col]).strip()
                                 if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
                                     all_species.append(value)
+                                    
+                                # 세 번째 컬럼도 확인 (일부 학명이 중복으로 들어있을 수 있음)
+                                if len(df.columns) > 2:
+                                    third_col_value = str(row[df.columns[2]]).strip()
+                                    if third_col_value and third_col_value.lower() not in ['nan', 'none', ''] and ' ' in third_col_value and len(third_col_value) > 3:
+                                        # 중복 방지
+                                        if third_col_value not in all_species:
+                                            all_species.append(third_col_value)
+                                            
                             except Exception as e:
                                 print(f"[Debug Bridge] 항목 추출 중 오류: {e}")
                                 continue
                         
-                        print(f"[Debug Bridge] 추출된 전체 종 수: {len(all_species)}")
+                        print(f"[Debug Bridge] 추출된 전체 해양생물 종 수: {len(all_species)}")
                         
                         # 결과에 추가 - 모든 항목 유지
-                        results = []  # 기존 결과 초기화
-                        for species in all_species:
-                            results.append(species)
+                        results = all_species.copy()
                         
-                        print(f"[Debug Bridge] 최종 추출된 종 수: {len(results)}")
+                        print(f"[Debug Bridge] 최종 추출된 해양생물 종 수: {len(results)}")
+                        if results:
+                            print(f"[Debug Bridge] 추출된 해양생물 학명 샘플: {results[:min(5, len(results))]}")
                     else:
                         # 일반적인 처리: 모든 컬럼에서 유효한 학명 찾기
                         for col in df.columns:

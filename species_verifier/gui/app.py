@@ -54,6 +54,10 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_cancelled = False # 작업 취소 요청 플래그 (추가)
         self.result_queue = queue.Queue() # 결과 처리를 위한 큐
         
+        # 미생물 파일 로드 관련 변수 초기화
+        self.current_microbe_names = None  # 파일에서 로드된 미생물 학명 목록
+        self.current_microbe_context = None  # 미생물 파일 경로
+        
         # 디버그 로그: 초기 self ID 및 메인 스레드 ID 기록
         self.main_thread_id = threading.get_ident()
         # 초기화 완료
@@ -285,25 +289,16 @@ class SpeciesVerifierApp(ctk.CTk):
     def _setup_callbacks(self):
         """콜백 설정"""
         # 해양생물 탭 콜백
-        self.marine_tab.set_callbacks(
-            on_search=self._marine_search,
-            on_file_browse=self._marine_file_browse,  # 람다 함수 제거
-            on_file_search=self._marine_file_search
-        )
-        
-        # 미생물 탭 콜백
-        self.microbe_tab.set_callbacks(
-            on_search=self._microbe_search,
-            on_file_browse=self._microbe_file_browse,  # 람다 함수 제거
-            on_file_search=self._microbe_file_search
-        )
+        self.marine_tab.register_callback("on_search", self._marine_search)
+        self.marine_tab.register_callback("on_file_browse", self._marine_file_browse)
 
-        # 통합생물(COL) 탭 콜백
-        self.col_tab.set_callbacks(
-            on_search=self._col_search,
-            on_file_browse=self._col_file_browse,  # 람다 함수 제거
-            on_file_search=self._col_file_search
-        )
+        # 미생물 탭 콜백
+        self.microbe_tab.register_callback("on_microbe_search", self._microbe_search)
+        self.microbe_tab.register_callback("on_microbe_file_browse", self._microbe_file_browse)
+
+        # 담수/기타(COL) 탭 콜백
+        self.col_tab.register_callback("on_search", self._col_search)
+        self.col_tab.register_callback("on_col_file_browse", self._col_file_browse)
 
         # 탭 변경 시 테이블 업데이트 콜백 연결
         self.tab_view.configure(command=self._on_tab_change)
@@ -315,46 +310,98 @@ class SpeciesVerifierApp(ctk.CTk):
             self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
             return
         
-        if not input_text:
-            return
+        # 파일에서 로드된 데이터가 있는지 확인하고 우선 사용
+        names_list = None
+        context = None
         
-        # 입력 문자열 처리
-        input_text = input_text.strip()
-        # 모든 입력을 콤마로 구분된 리스트로 처리 (LPSN 방식으로 통일)
-        names_list = [name.strip() for name in input_text.split(",") if name.strip()]
+        if tab_name == "marine":
+            # 해양생물 탭: 파일 데이터 우선 사용
+            if hasattr(self, 'current_marine_names') and self.current_marine_names:
+                names_list = self.current_marine_names
+                context = getattr(self, 'current_marine_context', None)
+                print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
+                # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        elif tab_name == "microbe":
+            # 미생물 탭: 파일 데이터 우선 사용
+            if hasattr(self, 'current_microbe_names') and self.current_microbe_names:
+                names_list = self.current_microbe_names
+                context = getattr(self, 'current_microbe_context', None)
+                print(f"[Debug] 미생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
+                # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        elif tab_name == "col":
+            # COL 탭: 파일 데이터 우선 사용
+            if hasattr(self, 'current_col_names') and self.current_col_names:
+                names_list = self.current_col_names
+                context = getattr(self, 'current_col_context', None)
+                print(f"[Debug] COL 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
+                # 사용 후 초기화하지 않음 (재사용 가능하도록)
         
+        # 파일 데이터가 없으면 입력 텍스트 사용
         if not names_list:
-            return
+            if not input_text:
+                return
+            
+            # 입력 문자열 처리
+            input_text = input_text.strip()
+            # 모든 입력을 콤마로 구분된 리스트로 처리 (LPSN 방식으로 통일)
+            names_list = [name.strip() for name in input_text.split(",") if name.strip()]
+            context = names_list  # 직접 입력인 경우 context는 입력 리스트
+            
+            if not names_list:
+                return
+            
+            print(f"[Debug] {tab_name} 탭: 직접 입력된 {len(names_list)}개 학명 사용")
         
         # 탭에 따라 적절한 검증 스레드 시작
         if tab_name == "marine":
             self._start_verification_thread(names_list)
         elif tab_name == "microbe":
             # LPSN 탭은 context도 전달
-            self._start_microbe_verification_thread(names_list, context=names_list)
+            self._start_microbe_verification_thread(names_list, context=context)
         elif tab_name == "col":
             self._start_col_verification_thread(names_list)
     
     # --- 해양생물 탭 콜백 함수 ---
     def _marine_search(self, input_text: str, tab_name: str = "marine"):
         """해양생물 검색 콜백"""
-        self._search_species(input_text, tab_name="marine")
+        print(f"[Debug] _marine_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
+        
+        # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
+        if hasattr(self, 'current_marine_names') and self.current_marine_names:
+            print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(self.current_marine_names)}개 학명 사용")
+            self._start_verification_thread(self.current_marine_names)
+            # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        else:
+            # 직접 입력된 텍스트로 검증
+            print(f"[Debug] 해양생물 탭: 직접 입력된 텍스트로 검증 시작")
+            self._search_species(input_text, tab_name="marine")
 
     # --- COL(통합생물) 탭 콜백 함수 ---
     def _col_search(self, input_text: str, tab_name: str = "col"):
         """COL 통합생물 검색 콜백"""
-        self._search_species(input_text, tab_name="col")
+        print(f"[Debug] _col_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
+        
+        # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
+        if hasattr(self, 'current_col_names') and self.current_col_names:
+            print(f"[Debug] COL 탭: 파일에서 로드된 {len(self.current_col_names)}개 학명 사용")
+            self._start_col_verification_thread(self.current_col_names)
+            # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        else:
+            # 직접 입력된 텍스트로 검증
+            print(f"[Debug] COL 탭: 직접 입력된 텍스트로 검증 시작")
+            self._search_species(input_text, tab_name="col")
 
-    def _col_file_browse(self, event=None) -> Optional[str]:
-        """COL 파일 선택 콜백"""
+    def _col_file_browse(self):
+        """COL 파일 선택 콜백. 파일을 선택하고 처리를 시작합니다."""
         file_path = filedialog.askopenfilename(
-            title="COL 학명 파일 선택",
-            filetypes=(("CSV 파일", "*.csv"), ("Excel 파일", "*.xlsx"), ("모든 파일", "*.*"))
+            title="담수 등 전체생물 학명 파일 선택",
+            filetypes=(("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv"), ("모든 파일", "*.*"))
         )
-        # 파일 경로가 있으면 바로 파일 검색 함수 호출
         if file_path:
+            # 파일 경로를 탭에 설정
+            self.col_tab.set_selected_file(file_path)
+            # 파일 처리 스레드 시작
             self._col_file_search(file_path)
-        return file_path
 
     def _col_file_search(self, file_path: str, tab_name: str = "col"):
         """COL 파일 검색 콜백"""
@@ -364,8 +411,8 @@ class SpeciesVerifierApp(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
-        # 파일 처리 스레드 시작 - 통합된 함수 사용
-        threading.Thread(target=self._process_file, args=(file_path, "col"), daemon=True).start()
+        # 파일 처리 스레드 시작 - COL 전용 함수 사용
+        threading.Thread(target=self._process_col_file, args=(file_path,), daemon=True).start()
 
     def _setup_cancel_button(self):
         """취소 버튼 설정"""
@@ -553,15 +600,9 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_verifying = True
         
         try:
-            # 브릿지 모듈의 함수 호출 - 통일된 파일 처리 함수 사용
+            # 브릿지 모듈의 함수 호출
             from species_verifier.gui.bridge import process_file
-            names_list = process_file(file_path, korean_mode=False)
-            
-            # 파일에서 추출한 학명 수 저장 (진행률 표시용)
-            self.current_file_item_count = len(names_list) if names_list else 0
-            # COL 탭용 별도 변수에도 저장
-            self.col_file_item_count = len(names_list) if names_list else 0
-            print(f"[Debug] COL 파일에서 추출된 학명 수: {self.col_file_item_count}")
+            names_list = process_file(file_path)
             
             # 취소 여부 확인
             if self.is_cancelled:
@@ -571,70 +612,91 @@ class SpeciesVerifierApp(ctk.CTk):
                 self.after(0, lambda: setattr(self, 'is_verifying', False))
                 return
             
-            if names_list and len(names_list) > 0:
-                # 전체 목록 처리 확인
-                total_names = len(names_list)
-                if total_names > 10:
-                    print(f"[Info App] 주의: 총 {total_names}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
+            if names_list:
+                # 파일에서 추출한 학명 수 저장 (검증 버튼 클릭 시 사용)
+                self.current_col_names = names_list
+                print(f"[Debug] COL 파일에서 추출된 학명 수: {len(names_list)}")
                 
-                # COL 검증 스레드 시작 (해양생물 검증이 아닌 COL 검증 사용)
-                self._start_col_verification_thread(names_list)
+                # 추출된 학명 수가 많은 경우 주의 메시지
+                if len(names_list) > 50:
+                    print(f"[Info App] 주의: 총 {len(names_list)}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
+                
+                # 학명 저장 완료 로그
+                print(f"[Debug] COL 파일에서 추출된 학명이 저장됨: {len(names_list)}개")
+                
+                # 상태 초기화 (자동 검증 시작하지 않음)
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                # is_verifying 플래그 해제
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
             else:
                 self.after(0, lambda: self.show_centered_message(
                     "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
                 ))
                 self.after(0, lambda: self._reset_status_ui())
                 self.after(0, lambda: self._set_ui_state("normal"))
+                # 검증 중 플래그 해제
                 self.after(0, lambda: setattr(self, 'is_verifying', False))
         except Exception as e:
             print(f"[Error] COL 파일 처리 중 오류 발생: {e}")
-            traceback.print_exc()
             self.after(0, lambda: self.show_centered_message(
                 "error", "파일 처리 오류", f"파일 처리 중 오류가 발생했습니다: {e}"
             ))
             self.after(0, lambda: self._reset_status_ui())
             self.after(0, lambda: self._set_ui_state("normal"))
+            # 검증 중 플래그 해제
             self.after(0, lambda: setattr(self, 'is_verifying', False))
     
-    def _marine_file_browse(self) -> Optional[str]:
-        """해양생물 파일 선택 콜백"""
+    def _marine_file_browse(self):
+        """해양생물 파일 선택 콜백. 파일을 선택하고 처리를 시작합니다."""
         file_path = filedialog.askopenfilename(
             title="해양생물 학명 파일 선택",
-            filetypes=(("CSV 파일", "*.csv"), ("Excel 파일", "*.xlsx"), ("모든 파일", "*.*"))
+            filetypes=(("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv"), ("모든 파일", "*.*"))
         )
-        # 파일 경로가 있으면 바로 파일 검색 함수 호출
         if file_path:
+            # 파일 경로를 탭에 설정
+            self.marine_tab.set_selected_file(file_path)
+            # 파일 처리 스레드 시작
             self._marine_file_search(file_path)
-        return file_path
     
     def _marine_file_search(self, file_path: str, tab_name: str = "marine"):
         """해양생물 파일 검색 콜백"""
         if self.is_verifying:
             self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
             return
-            
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
-            
         # 파일 처리 스레드 시작
-        threading.Thread(target=self._process_file, args=(file_path,), daemon=True).start()
+        threading.Thread(target=self._process_file, args=(file_path, "marine"), daemon=True).start()
     
     # --- 미생물 탭 콜백 함수 ---
     def _microbe_search(self, input_text: str, tab_name: str = "microbe"):
         """미생물 검색 콜백"""
-        self._search_species(input_text, tab_name="microbe")
+        print(f"[Debug] _microbe_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
+        
+        # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
+        if hasattr(self, 'current_microbe_names') and self.current_microbe_names:
+            print(f"[Debug] 파일에서 로드된 {len(self.current_microbe_names)}개 학명으로 검증 시작")
+            context = getattr(self, 'current_microbe_context', None)
+            self._start_microbe_verification_thread(self.current_microbe_names, context=context)
+            # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        else:
+            # 직접 입력된 텍스트로 검증
+            print(f"[Debug] 직접 입력된 텍스트로 검증 시작: '{input_text[:50] if input_text else 'None'}'")
+            self._search_species(input_text, tab_name="microbe")
     
-    def _microbe_file_browse(self) -> Optional[str]:
-        """미생물 파일 선택 콜백"""
+    def _microbe_file_browse(self):
+        """미생물 파일 선택 콜백. 파일을 선택하고 처리를 시작합니다."""
         file_path = filedialog.askopenfilename(
             title="미생물 학명 파일 선택",
-            filetypes=(("CSV 파일", "*.csv"), ("Excel 파일", "*.xlsx"), ("모든 파일", "*.*"))
+            filetypes=(("Excel 파일", "*.xlsx"), ("CSV 파일", "*.csv"), ("모든 파일", "*.*"))
         )
-        # 파일 경로가 있으면 바로 파일 검색 함수 호출
         if file_path:
+            # 파일 경로를 탭에 설정
+            self.microbe_tab.set_selected_file(file_path)
+            # 파일 처리 스레드 시작
             self._microbe_file_search(file_path)
-        return file_path
     
     def _microbe_file_search(self, file_path: str, tab_name: str = "microbe"):
         """미생물 파일 검색 콜백"""
@@ -1121,7 +1183,7 @@ class SpeciesVerifierApp(ctk.CTk):
         try:
             # 브릿지 모듈의 함수 호출
             from species_verifier.gui.bridge import process_file
-            names_list = process_file(file_path, korean_mode=(tab_name == "marine"))
+            names_list = process_file(file_path, korean_mode=False)  # 모든 탭에서 학명 모드로 처리
             
             # 파일에서 추출한 학명 수 저장 (진행률 표시용)
             self.current_file_item_count = len(names_list) if names_list else 0
@@ -1147,11 +1209,23 @@ class SpeciesVerifierApp(ctk.CTk):
                 if total_names > 10:
                     print(f"[Info App] 주의: 총 {total_names}개 항목 중 일부만 처리되는 문제가 있을 수 있습니다. 모든 항목 처리를 확인합니다.")
                 
-                # 탭에 맞는 검증 스레드 시작
+                # 탭에 맞는 검증 데이터 저장 (자동 시작하지 않음)
                 if tab_name == "marine":
-                    self._start_verification_thread(names_list)
+                    # 해양생물 탭: 파일에서 로드된 학명을 저장
+                    self.current_marine_names = names_list
+                    self.current_marine_context = file_path
+                    print(f"[Debug] 해양생물 파일에서 추출된 학명이 저장됨: {len(names_list)}개")
                 elif tab_name == "col":
-                    self._start_col_verification_thread(names_list)
+                    # COL 탭: 파일에서 로드된 학명을 저장 (자동 시작하지 않음)
+                    self.current_col_names = names_list
+                    self.current_col_context = file_path
+                    print(f"[Debug] COL 파일에서 추출된 학명이 저장됨: {len(names_list)}개")
+                
+                # 상태 초기화 (자동 검증 시작하지 않음)
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                # is_verifying 플래그 해제
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
             else:
                 self.after(0, lambda: self.show_centered_message(
                     "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
@@ -1189,6 +1263,7 @@ class SpeciesVerifierApp(ctk.CTk):
         
         try:
             # 브릿지 모듈의 함수 호출
+            from species_verifier.gui.bridge import process_microbe_file
             names_list = process_microbe_file(file_path)
             
             # 취소 여부 확인
@@ -1196,17 +1271,28 @@ class SpeciesVerifierApp(ctk.CTk):
                 print("[Info] 미생물 파일 처리 중 취소 요청 받음")
                 self.after(0, lambda: self._reset_status_ui())
                 self.after(0, lambda: self._set_ui_state("normal"))
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
                 return
             
             if names_list:
-                # 파일 경로를 context로 전달하며 검증 스레드 시작
-                self._start_microbe_verification_thread(names_list, context=file_path) 
+                # 파일에서 추출한 학명 수 저장 (검증 버튼 클릭 시 사용)
+                self.current_microbe_names = names_list
+                self.current_microbe_context = file_path
+                print(f"[Debug] 미생물 파일에서 추출된 학명 수: {len(names_list)}")
+                
+                # 상태 초기화 (자동 검증 시작하지 않음)
+                self.after(0, lambda: self._reset_status_ui())
+                self.after(0, lambda: self._set_ui_state("normal"))
+                # is_verifying 플래그 해제
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
             else:
                 self.after(0, lambda: self.show_centered_message(
                     "error", "파일 처리 오류", "파일에서 유효한 학명을 찾을 수 없습니다."
                 ))
                 self.after(0, lambda: self._reset_status_ui())
                 self.after(0, lambda: self._set_ui_state("normal"))
+                # 검증 중 플래그 해제
+                self.after(0, lambda: setattr(self, 'is_verifying', False))
         except Exception as e:
             print(f"[Error] 미생물 파일 처리 중 오류 발생: {e}")
             self.after(0, lambda: self.show_centered_message(
@@ -1215,7 +1301,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self.after(0, lambda: self._reset_status_ui())
             self.after(0, lambda: self._set_ui_state("normal"))
             # 검증 중 플래그 해제
-            self.is_verifying = False
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
     
     def _update_results_display(self, results_list: List[Dict[str, Any]], tab_name: str = None, clear_first: bool = False):
         """결과 표시 업데이트 (전체 리스트 업데이트용 - 큐 처리와 별개)"""
@@ -1324,21 +1410,6 @@ class SpeciesVerifierApp(ctk.CTk):
             if is_idle:
                  self.microbe_tab._update_verify_button_state()
 
-        # 탭 뷰 자체
-        if hasattr(self, 'tab_view'):
-            self.tab_view.configure(state=enable_state)
-
-        # --- 상태 바 업데이트 ---
-        if is_idle:
-            results_exist = self._check_results_exist()
-            print(f"[Debug _set_ui_state(idle)] Active Tab: {self.tab_view.get()}, Results Exist: {results_exist}")
-            # StatusBar의 set_ready 호출 (저장 버튼 표시 여부 전달)
-            if hasattr(self, 'status_bar'): # status_bar 객체 확인
-                self.status_bar.set_ready(show_save_button=results_exist)
-        else: # running/disabled 상태
-            # 진행 표시는 _start_..._thread 함수에서 _show_progress_ui를 통해 처리
-            pass
-            
         # 탭 뷰 자체
         if hasattr(self, 'tab_view'):
             self.tab_view.configure(state=enable_state)
@@ -1758,38 +1829,41 @@ class SpeciesVerifierApp(ctk.CTk):
         """현재 활성화된 탭의 결과를 Excel 파일로 저장합니다."""
         # 현재 탭 이름 가져오기
         current_tab_name = self.tab_view.get()
+        print(f"[Debug] 현재 활성 탭: '{current_tab_name}'")
         
-        # 탭 이름에 따라 tree_type 결정
+        # 탭 이름에 따라 tree_type 결정 (실제 탭 이름과 일치하도록 수정)
         tree_type = None
-        if current_tab_name == "해양생물 (WoRMS)":
+        if current_tab_name == "해양생물(WoRMS)":
             tree_type = "marine"
         elif current_tab_name == "미생물 (LPSN)":
             tree_type = "microbe"
-        elif current_tab_name == "통합생물 (COL)":
+        elif current_tab_name == "담수 등 전체생물(COL)":
             tree_type = "col"
         
         # 해당 탭 유형이 확인되면 export_results_to_excel 호출
         if tree_type:
+            print(f"[Debug] 탭 유형 확인됨: {tree_type}")
             self.export_results_to_excel(tree_type)
         else:
-            print(f"[Error] Unknown tab type for export: {current_tab_name}")
-            self.show_centered_message("error", "저장 오류", "알 수 없는 탭 유형입니다.")
+            print(f"[Error] Unknown tab type for export: '{current_tab_name}'")
+            self.show_centered_message("error", "저장 오류", f"알 수 없는 탭 유형입니다: '{current_tab_name}'")
     
     def export_results_to_excel(self, tree_type: str):
         """지정된 탭의 결과를 Excel 파일로 저장합니다."""
+        print(f"[Debug Export] 저장 시작: tree_type={tree_type}")
         results_to_export = None
         tree = None
         columns_info = []
         default_filename = "verification_results.xlsx"
 
-        # 수정: tree_type에 따라 정보 설정
+        # 수정: tree_type에 따라 정보 설정 (실제 데이터 키와 일치하도록 수정)
         if tree_type == "marine":
             results_to_export = self.current_results_marine
             tree = self.result_tree_marine.tree
             columns_info = [
                 ("input_name", "입력명"), 
-                ("mapped_name", "학명"), ("verified", "검증"), ("worms_status", "WoRMS 상태"),
-                ("worms_id", "WoRMS ID"), ("worms_url", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
+                ("mapped_name", "학명"), ("is_verified", "검증"), ("worms_status", "WoRMS 상태"),
+                ("worms_id", "WoRMS ID"), ("worms_link", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "marine_verification_results.xlsx"
         elif tree_type == "microbe":
@@ -1797,7 +1871,7 @@ class SpeciesVerifierApp(ctk.CTk):
             tree = self.result_tree_microbe.tree
             columns_info = [
                 ("input_name", "입력명"), 
-                ("valid_name", "유효 학명"), ("verified", "검증"), ("status", "상태"), 
+                ("valid_name", "유효 학명"), ("is_verified", "검증"), ("status", "상태"), 
                 ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "microbe_verification_results.xlsx"
@@ -1806,8 +1880,8 @@ class SpeciesVerifierApp(ctk.CTk):
             tree = self.result_tree_col.tree
             columns_info = [
                 ("input_name", "입력명"), 
-                ("valid_name", "학명"), ("verified", "검증"), 
-                ("col_status", "COL 상태"), ("col_id", "COL ID"), 
+                ("valid_name", "학명"), ("is_verified", "검증"), 
+                ("status", "COL 상태"), ("col_id", "COL ID"), 
                 ("col_url", "COL URL"), ("wiki_summary", "심층분석 결과")
             ]
             default_filename = "col_verification_results.xlsx"
@@ -1816,12 +1890,15 @@ class SpeciesVerifierApp(ctk.CTk):
             return
 
         # 결과 데이터 유효성 검사
+        print(f"[Debug Export] 결과 검사: results_to_export={len(results_to_export) if results_to_export else 0}개, tree_children={len(tree.get_children()) if tree else 0}개")
+        
         if not results_to_export and (not tree or not tree.get_children()):
+             print("[Debug Export] 내보낼 결과가 없음")
              self.show_centered_message("info", "내보내기", "내보낼 결과가 없습니다.")
              return
         elif not results_to_export:
              # Treeview에서 직접 데이터 읽기 (current_results가 비었을 경우)
-             print(f"[Warning] Exporting {tree_type} directly from Treeview as current_results is empty.")
+             print(f"[Warning Export] current_results가 비어있음. Treeview에서 직접 읽기: {tree_type}")
              results_to_export = []
              for item_id in tree.get_children():
                   item_data = {"input_name": tree.item(item_id, "text")} 
@@ -1830,7 +1907,9 @@ class SpeciesVerifierApp(ctk.CTk):
                        if i < len(values): item_data[key] = values[i]
                        else: item_data[key] = "-"
                   results_to_export.append(item_data)
+             print(f"[Debug Export] Treeview에서 읽은 결과 수: {len(results_to_export)}")
              if not results_to_export:
+                 print("[Debug Export] Treeview에서도 결과를 읽을 수 없음")
                  self.show_centered_message("info", "내보내기", "Treeview에서 결과를 읽을 수 없습니다.")
                  return
 
@@ -1846,13 +1925,22 @@ class SpeciesVerifierApp(ctk.CTk):
             return # 사용자가 취소
 
         try:
+            print(f"[Debug Export] DataFrame 생성 시작: columns_info={columns_info}")
             df_columns = [col_key for col_key, _ in columns_info]
+            print(f"[Debug Export] 사용할 컬럼: {df_columns}")
+            print(f"[Debug Export] 첫 번째 결과 샘플: {results_to_export[0] if results_to_export else 'None'}")
+            
             df = pd.DataFrame(results_to_export, columns=df_columns) 
+            print(f"[Debug Export] DataFrame 생성 완료: shape={df.shape}")
+            
             df.rename(columns={col_key: col_header for col_key, col_header in columns_info}, inplace=True)
+            print(f"[Debug Export] 컬럼명 변경 완료: {list(df.columns)}")
+            
             df.to_excel(file_path, index=False)
+            print(f"[Debug Export] Excel 저장 완료: {file_path}")
             self.show_centered_message("info", "저장 완료", f"결과가 성공적으로 저장되었습니다.\n 경로: {file_path}")
         except Exception as e:
-            print(f"[Error] Excel 저장 오류: {e}")
+            print(f"[Error Export] Excel 저장 오류: {e}")
             print(traceback.format_exc())
             self.show_centered_message("error", "저장 실패", f"결과를 저장하는 중 오류가 발생했습니다.\n 오류: {e}")
 
@@ -1870,20 +1958,20 @@ class SpeciesVerifierApp(ctk.CTk):
         headers = []
         columns_info = []
 
-        # 수정: tree_type에 따라 트리, 헤더, 컬럼 정보 설정
+        # 수정: tree_type에 따라 트리, 헤더, 컬럼 정보 설정 (실제 데이터 키와 일치하도록 수정)
         if tree_type == 'marine':
             tree = self.result_tree_marine.tree
             headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
             columns_info = [
-                ("input_name", "입력명"), ("mapped_name", "학명"), ("verified", "검증"),
+                ("input_name", "입력명"), ("mapped_name", "학명"), ("is_verified", "검증"),
                 ("worms_status", "WoRMS 상태"), ("worms_id", "WoRMS ID"), 
-                ("worms_url", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
+                ("worms_link", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
             ]
         elif tree_type == 'microbe':
             tree = self.result_tree_microbe.tree
             headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
             columns_info = [
-                ("input_name", "입력명"), ("valid_name", "유효 학명"), ("verified", "검증"),
+                ("input_name", "입력명"), ("valid_name", "유효 학명"), ("is_verified", "검증"),
                 ("status", "상태"), ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"),
                 ("wiki_summary", "심층분석 결과")
             ]
@@ -1891,8 +1979,8 @@ class SpeciesVerifierApp(ctk.CTk):
             tree = self.result_tree_col.tree
             headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
             columns_info = [
-                ("input_name", "입력명"), ("valid_name", "학명"), ("verified", "검증"), 
-                ("col_status", "COL 상태"), ("col_id", "COL ID"), 
+                ("input_name", "입력명"), ("valid_name", "학명"), ("is_verified", "검증"), 
+                ("status", "COL 상태"), ("col_id", "COL ID"), 
                 ("col_url", "COL URL"), ("wiki_summary", "심층분석 결과")
             ]
         else:
@@ -1914,7 +2002,7 @@ class SpeciesVerifierApp(ctk.CTk):
                      full_result = self._get_result_data_from_item_id(tree_type, item_id)
                      full_summary = full_result.get('wiki_summary', '') if full_result else ''
                      value = full_summary if full_summary else str(value)[:100] + "..." # 전체 없으면 축약
-                elif col_key in ["worms_url", "lpsn_link", "col_url"] and (not value or value == '-'):
+                elif col_key in ["worms_link", "lpsn_link", "col_url"] and (not value or value == '-'):
                      value = "N/A" 
                 
                 info_lines.append(f"{header}: {value}")

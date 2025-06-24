@@ -45,15 +45,24 @@ class APIConfig:
     
     # 위키백과 API 설정
     WIKIPEDIA_API_URL = "https://ko.wikipedia.org/w/api.php"
-    WIKIPEDIA_REQUEST_TIMEOUT = 5  # 초
+    WIKIPEDIA_REQUEST_TIMEOUT = 10  # 초 (5 -> 10으로 증가)
     
     # Gemini API 설정 (있는 경우)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED = bool(GEMINI_API_KEY)
     
-    # API 요청 지연 시간 (추가)
-    REQUEST_DELAY = 0.5 # 각 API 호출 사이의 지연 시간 (초)
-BATCH_DELAY = 2.0 # 배치간 지연 시간 (초) - 대량 처리 시 안정성 향상
+    # API 요청 지연 시간 및 재시도 설정 (스마트폰 테더링 환경 최적화)
+    REQUEST_DELAY = 1.0  # 각 API 호출 사이의 지연 시간 (초) - 0.5 -> 1.0으로 증가
+    BATCH_DELAY = 3.0  # 배치간 지연 시간 (초) - 2.0 -> 3.0으로 증가
+    
+    # 네트워크 안정성 설정
+    REQUEST_TIMEOUT = 15  # HTTP 요청 타임아웃 (초)
+    MAX_RETRIES = 3  # 최대 재시도 횟수
+    RETRY_DELAY = 2.0  # 재시도 간격 (초)
+    
+    # COL API 설정
+    COL_API_URL = "https://api.catalogueoflife.org"
+    COL_REQUEST_TIMEOUT = 20  # COL API 타임아웃 (초)
 
 class UIConfig:
     """사용자 인터페이스 관련 설정"""

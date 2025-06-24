@@ -20,7 +20,7 @@ try:
 except ImportError as e:
     # 임포트 오류 처리 (로그 제거)
     config = None
-    get_wiki_summary = lambda x: "정보 없음 (Import 오류)"
+    get_wiki_summary = lambda x, check_cancelled=None: "정보 없음 (Import 오류)"
     extract_scientific_name_from_wiki = lambda x: None
     clean_scientific_name = lambda x: x
     create_basic_marine_result = lambda *args: {}

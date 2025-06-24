@@ -29,10 +29,20 @@ class MicrobeVerifier:
         self.status_update_callback = status_update_callback
         self.result_callback = result_callback
     
-    def update_progress(self, progress: float):
-        """진행률 업데이트"""
+    def update_progress(self, progress: float, current_item=None, total_items=None):
+        """진행률 업데이트
+        
+        Args:
+            progress: 진행률 (0.0~1.0 값)
+            current_item: 현재 처리 중인 항목 번호
+            total_items: 전체 항목 수
+        """
         if self.progress_callback:
-            self.progress_callback(progress)
+            # 모든 매개변수를 콜백에 전달
+            if current_item is not None and total_items is not None:
+                self.progress_callback(progress, current_item, total_items)
+            else:
+                self.progress_callback(progress)
     
     def update_status(self, message: str):
         """상태 메시지 업데이트"""
@@ -175,7 +185,7 @@ class MicrobeVerifier:
                 initial_status = f"입력된 {total_items}개 학명 검증 시작"
                 
             self.update_status(initial_status)
-            self.update_progress(0)
+            self.update_progress(0, 0, total_items)
             
             # 취소 여부 한번 더 확인
             if check_cancelled and check_cancelled():
@@ -206,8 +216,14 @@ class MicrobeVerifier:
                         # 현재 처리된 항목 수 증가 및 계산
                         processed_count[0] += 1
                         progress = float(processed_count[0]) / total_items if total_items > 0 else 0
-                        self.update_progress(progress)
-                        self.update_status(f"미생물 검증 중... ({processed_count[0]}/{total_items})")
+                        
+                        # 진행률 업데이트 시 현재 항목 수와 전체 항목 수를 정확히 전달
+                        if self.progress_callback:
+                            self.progress_callback(progress, processed_count[0], total_items)
+                        
+                        # 상태 메시지 업데이트
+                        if self.status_update_callback:
+                            self.status_update_callback(f"미생물 검증 중... ({processed_count[0]}/{total_items})")
                     
                     # verify_microbe_species 함수 호출 (취소 기능 포함)
                     results_list = verify_microbe_species(
@@ -232,7 +248,7 @@ class MicrobeVerifier:
                     if isinstance(context, str):
                         completion_status = f"파일 '{os.path.basename(context)}' 검증 완료 ({len(results_list)}/{total_items} 결과)"
                     self.update_status(completion_status)
-                    self.update_progress(1.0) # 완료 시 100%
+                    self.update_progress(1.0, total_items, total_items) # 완료 시 100%
 
                     return results_list
                 
@@ -240,7 +256,7 @@ class MicrobeVerifier:
                     print(f"[Error MicrobeVerifier] verify_microbe_species 함수 호출 중 오류: {ve}")
                     traceback.print_exc()
                     self.update_status(f"오류 발생: {ve}")
-                    self.update_progress(1.0)
+                    self.update_progress(1.0, total_items, total_items)
                     return []
             else:
                 print("[Warning MicrobeVerifier] verify_microbe_species 함수를 찾을 수 없음. 모의 결과 생성.")
@@ -249,9 +265,9 @@ class MicrobeVerifier:
                 if self.result_callback:
                     for i, result_item in enumerate(results_list):
                         self.result_callback(result_item, "col")
-                        self.update_progress((i + 1) / total_items)
+                        self.update_progress((i + 1) / total_items, i + 1, total_items)
                 self.update_status("모의 검증 완료")
-                self.update_progress(1.0)
+                self.update_progress(1.0, total_items, total_items)
                 return results_list
 
         except Exception as e:

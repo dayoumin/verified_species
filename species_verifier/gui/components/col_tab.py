@@ -258,53 +258,34 @@ class ColTabFrame(BaseTabFrame):
         self._update_input_count()
 
     def _on_file_browse_click(self):
-        file_path = filedialog.askopenfilename(
-            title="담수 등 전체생물 목록 파일 선택",
-            filetypes=[
-                ("Excel 파일", "*.xlsx"),
-                ("CSV 파일", "*.csv"),
-                ("텍스트 파일", "*.txt"),
-                ("모든 파일", "*.*")
-            ]
-        )
-        if file_path:
-            # 파일 선택 시 개수 계산 및 저장
-            self.file_entry_count = self._calculate_file_entries(file_path)
-            self.file_path_var.set(file_path)
-            # 파일 브라우저 콜백 대신 파일 검색 콜백을 직접 호출
-            self._trigger_callback("on_file_search", file_path, "col")
-        else:
-            # 파일 선택 취소 시
-            self.file_entry_count = 0
-            self.file_path_var.set("")
-            
-        # 공통 업데이트 함수 호출
-        self._update_input_count()
+        """파일 찾기 버튼 클릭 시 파일 처리 콜백 호출"""
+        print("[Debug COL] 파일 찾기 버튼 클릭. 'on_col_file_browse' 콜백 트리거.")
+        self.trigger_callback("on_col_file_browse")
 
     def _on_file_clear_click(self):
-        self.file_entry_count = 0 # 파일 개수 리셋
+        """파일 지우기 버튼 클릭 이벤트 처리"""
+        self.file_entry_count = 0
         self.file_path_var.set("")
         self._update_input_count()
 
     def _trigger_verify_callback(self):
-        text = self.entry.get("0.0", "end-1c").strip()
-        file_path = self.file_path_var.get()
-        if text and text != self.initial_text:
-            self._trigger_callback("on_search", text, "col")
-        elif file_path and os.path.exists(file_path):
-            self._trigger_callback("on_file_search", file_path, "col")
-        else:
-            print("[Warning COL] Verify button clicked but no valid input found.")
-
-    def set_selected_file(self, file_path: Optional[str]):
-        self.file_path_var.set(file_path or "")
-        # 파일 경로가 외부에서 설정될 때도 개수 업데이트
-        if file_path and os.path.exists(file_path):
-            self.file_entry_count = self._calculate_file_entries(file_path)
-        else:
-            self.file_entry_count = 0
-        self._update_input_count()
+        """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
+        print("[Debug COL] 검증 버튼 클릭됨")
+        text_input = self.entry.get("0.0", "end-1c").strip()
         
+        # 'on_search' 콜백은 app._search_species를 호출합니다.
+        # 이 함수는 파일에서 로드된 데이터가 있는지 먼저 확인하고, 
+        # 없으면 텍스트 입력을 사용합니다.
+        print("[Debug COL] 'on_search' 콜백 트리거 (tab=col)")
+        self.trigger_callback("on_search", text_input, "col")
+
+    def set_selected_file(self, file_path: str):
+        """app.py에서 파일 경로와 항목 수를 설정하기 위해 호출하는 함수"""
+        if file_path and os.path.exists(file_path):
+            self.file_path_var.set(file_path)
+        else:
+            self.file_path_var.set("")
+
     def reset_file_info(self):
         """취소 시 파일 정보 초기화"""
         # 파일 경로와 개수 초기화

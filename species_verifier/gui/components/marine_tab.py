@@ -275,25 +275,11 @@ class MarineTabFrame(BaseTabFrame):
         self._update_input_count()
     
     def _on_file_browse_click(self):
-        """파일 찾기 버튼 클릭 이벤트 처리"""
-        file_path = filedialog.askopenfilename(
-            title="생물종 목록 파일 선택",
-            filetypes=[
-                ("Excel 파일", "*.xlsx"),
-                ("CSV 파일", "*.csv"),
-                ("텍스트 파일", "*.txt"),
-                ("모든 파일", "*.*")
-            ]
-        )
-        if file_path:
-            # 파일 선택 시 개수 계산 및 저장
-            self.file_entry_count = self._calculate_file_entries(file_path)
-            self.file_path_var.set(file_path)
-            self._update_input_count()
-        else:
-            self.file_path_var.set("")
-            self.file_entry_count = 0
-            self._update_input_count()
+        """파일 찾기 버튼 클릭 시 파일 처리 콜백 호출"""
+        # app.py의 _marine_file_browse 함수가 파일 대화상자를 열고,
+        # 선택된 파일 경로를 반환하면 그 경로로 on_file_search 콜백을 호출합니다.
+        print("[Debug Marine] 파일 찾기 버튼 클릭. 'on_file_browse' 콜백 트리거.")
+        self.trigger_callback("on_file_browse")
 
     def _on_file_clear_click(self):
         """파일 지우기 버튼 클릭 이벤트 처리"""
@@ -302,14 +288,16 @@ class MarineTabFrame(BaseTabFrame):
         self._update_input_count()
 
     def _trigger_verify_callback(self):
-        text = self.entry.get("0.0", "end-1c").strip()
-        file_path = self.file_path_var.get()
-        if text and text != self.initial_text:
-            self._trigger_callback("on_search", text, "marine")
-        elif file_path and os.path.exists(file_path):
-            self._trigger_callback("on_file_search", file_path, "marine")
-        else:
-            print("[Warning Marine] Verify button clicked but no valid input found.")
+        """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
+        print("[Debug Marine] 검증 버튼 클릭됨")
+        text_input = self.entry.get("0.0", "end-1c").strip()
+        
+        # 'on_search' 콜백은 app._search_species를 호출합니다.
+        # 이 함수는 파일에서 로드된 데이터가 있는지 먼저 확인하고, 
+        # 없으면 텍스트 입력을 사용합니다.
+        # 따라서 항상 'on_search'를 호출하는 것이 올바른 로직입니다.
+        print("[Debug Marine] 'on_search' 콜백 트리거")
+        self.trigger_callback("on_search", text_input, "marine")
 
     def _update_verify_button_state(self, *args):
         """검증 버튼 활성화/비활성화 상태 업데이트"""
