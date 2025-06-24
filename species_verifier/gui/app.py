@@ -1953,17 +1953,6 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_cancelled = False
         print("[Debug] UI 상태가 초기화되었습니다.")
 
-        # --- 파일 기반 검증에 사용된 캐시 초기화 ---
-        # 검증이 완료(또는 취소)된 뒤에는 파일에서 읽어온 학명 목록을 메모리에서 제거하여
-        # 이후 텍스트 입력 검증 시 오래된 데이터가 재사용되지 않도록 합니다.
-        if hasattr(self, 'current_marine_names'):
-            self.current_marine_names = []
-        if hasattr(self, 'current_microbe_names'):
-            self.current_microbe_names = []
-        if hasattr(self, 'current_col_names'):
-            self.current_col_names = []
-        print("[Debug] 파일 캐시 초기화 완료 (marine/microbe/col)")
-
     def _copy_all_info(self, tree_type, item_id):
         """선택한 항목의 모든 정보를 클립보드에 복사합니다."""
         tree = None
