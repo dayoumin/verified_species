@@ -282,9 +282,22 @@ class ColTabFrame(BaseTabFrame):
     def set_selected_file(self, file_path: str):
         """app.py에서 파일 경로와 항목 수를 설정하기 위해 호출하는 함수"""
         if file_path and os.path.exists(file_path):
+            # 파일 경로 설정
             self.file_path_var.set(file_path)
+
+            # 파일 내 학명(또는 레코드) 개수 계산 후 저장
+            try:
+                self.file_entry_count = self._calculate_file_entries(file_path)
+            except Exception as e:
+                print(f"[Error ColTab] 파일 항목 개수 계산 중 오류: {e}")
+                self.file_entry_count = 0
         else:
+            # 유효하지 않은 경로이면 정보 초기화
             self.file_path_var.set("")
+            self.file_entry_count = 0
+
+        # UI 업데이트 (검증 버튼 활성화 등)
+        self._update_input_count()
 
     def reset_file_info(self):
         """취소 시 파일 정보 초기화"""

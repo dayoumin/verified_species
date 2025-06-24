@@ -520,7 +520,7 @@ class SpeciesVerifierApp(ctk.CTk):
                         
                         # 검증 실행
                         start_time = time.time()
-                        result = verify_col_species(query)
+                        result = verify_col_species(query, rank=self.col_tab.get_rank_filter()) # 등급 필터 전달
                         duration = time.time() - start_time
                         
                         print(f"[Debug] COL 항목 {current_item}/{total_items} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
