@@ -305,3 +305,10 @@ class ColTabFrame(BaseTabFrame):
         self.file_path_var.set("")
         self.file_entry_count = 0
         self._update_input_count()
+
+    def get_rank_filter(self) -> Optional[str]:
+        """COL 검증 시 사용할 등급(rank) 필터를 반환합니다.
+        현재 UI에 등급 선택 기능이 없으므로 기본값으로 None을 반환하여 모든 랭크를 검증합니다.
+        이후 UI에 필터 기능이 추가될 경우, 이 메서드를 수정하여 선택된 값을 반환하도록 하면 됩니다.
+        """
+        return None
