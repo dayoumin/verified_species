@@ -553,6 +553,8 @@ class SpeciesVerifierApp(ctk.CTk):
             
             if not self.is_cancelled:
                 print(f"[Info COL] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+                # 검증 완료 후 파일 캐시 삭제
+                self.after(0, lambda: self._clear_file_cache("col"))
             else:
                 print(f"[Info COL] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
@@ -997,6 +999,8 @@ class SpeciesVerifierApp(ctk.CTk):
             
             if not self.is_cancelled:
                 print(f"[Info Marine] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+                # 검증 완료 후 파일 캐시 삭제
+                self.after(0, lambda: self._clear_file_cache("marine"))
             else:
                 print(f"[Info Marine] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
@@ -1132,6 +1136,8 @@ class SpeciesVerifierApp(ctk.CTk):
             
             if not self.is_cancelled:
                 print(f"[Info Microbe] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+                # 검증 완료 후 파일 캐시 삭제
+                self.after(0, lambda: self._clear_file_cache("microbe"))
             else:
                 print(f"[Info Microbe] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
@@ -1498,6 +1504,12 @@ class SpeciesVerifierApp(ctk.CTk):
             # 취소 플래그 설정 및 UI 복원
             self.is_cancelled = True  # 취소 플래그 설정
             print("[Debug] 작업 취소 요청됨")
+            
+            # 취소 시 모든 탭의 파일 캐시 삭제
+            self._clear_file_cache("marine")
+            self._clear_file_cache("microbe")
+            self._clear_file_cache("col")
+            print("[Debug] 취소 시 모든 파일 캐시 삭제 완료")
             
             # 취소 버튼 비활성화 (연속 클릭 방지)
             if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'cancel_button'):
@@ -2250,6 +2262,32 @@ class SpeciesVerifierApp(ctk.CTk):
             font=self.default_bold_font
         )
         close_button.grid(row=1, column=0, padx=20, pady=(0, 20))
+
+    def _clear_file_cache(self, tab_type: str):
+        """탭별 파일 캐시 삭제"""
+        if tab_type == "marine":
+            self.current_marine_names = []
+            print(f"[Debug] 해양생물 파일 캐시 삭제됨")
+        elif tab_type == "microbe":
+            self.current_microbe_names = []
+            print(f"[Debug] 미생물 파일 캐시 삭제됨")
+        elif tab_type == "col":
+            self.current_col_names = []
+            print(f"[Debug] COL 파일 캐시 삭제됨")
+
+    def _marine_search(self, input_text: str, tab_name: str = "marine"):
+        """해양생물 검색 콜백"""
+        print(f"[Debug] _marine_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
+        
+        # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
+        if hasattr(self, 'current_marine_names') and self.current_marine_names:
+            print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(self.current_marine_names)}개 학명 사용")
+            self._start_verification_thread(self.current_marine_names)
+            # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        else:
+            # 직접 입력된 텍스트로 검증
+            print(f"[Debug] 해양생물 탭: 직접 입력된 텍스트로 검증 시작")
+            self._search_species(input_text, tab_name="marine")
 
 
 def run_app():
