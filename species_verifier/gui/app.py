@@ -39,6 +39,17 @@ from species_verifier.gui.bridge import (
 class SpeciesVerifierApp(ctk.CTk):
     """종 검증 애플리케이션 메인 클래스"""
     
+    # 탭 색상 상수 정의 (공통 관리)
+    TAB_COLORS = {
+        'selected_color': ("#1f538d", "#2a5a9e"),  # 활성 탭 색상 (파란색)
+        'selected_hover_color': ("#144870", "#1f4a7d"),  # 활성 탭 호버
+        'unselected_color': ("#d0d0d0", "#404040"),  # 비활성 탭 배경
+        'unselected_hover_color': ("#c0c0c0", "#4a4a4a"),  # 비활성 탭 호버
+        'text_color': ("#ffffff", "#ffffff"),  # 활성 탭 텍스트 색상 (흰색)
+        'text_color_disabled': ("#2d3748", "#a0aec0"),  # 비활성 탭 텍스트 색상
+        'fg_color': ("#f8f9fa", "#2b2b2b")  # 탭 영역 배경색
+    }
+    
     def __init__(self):
         """초기화"""
         super().__init__()
@@ -118,7 +129,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.header_frame = ctk.CTkFrame(
             self, 
             height=70,  # 높이 증가
-            corner_radius=0,
+            corner_radius=6,
             fg_color=("#ffffff", "#1a1a1a"),  # 깔끔한 배경색
             border_width=1,
             border_color=("#e0e0e0", "#404040")  # 하단 테두리
@@ -155,17 +166,16 @@ class SpeciesVerifierApp(ctk.CTk):
         self.tab_view = ctk.CTkTabview(
             self, 
             command=self._on_tab_change,
-            corner_radius=12,  # 둥근 모서리 추가
-            border_width=2,   # 테두리 두께 증가
-            border_color=("#b0b0b0", "#606060"),  # 테두리 색상 더 진하게
-            fg_color=("#ffffff", "#2a2a2a"),  # 배경색 더 명확하게
-            segmented_button_fg_color=("#f0f0f0", "#404040"),  # 탭 영역 배경색
-            segmented_button_selected_color=("#1f538d", "#2a5a9e"),  # 활성 탭 색상 (파란색)
-            segmented_button_selected_hover_color=("#144870", "#1f4a7d"),  # 활성 탭 호버 색상
-            segmented_button_unselected_color=("#ffffff", "#353535"),  # 비활성 탭 배경 (더 밝게)
-            segmented_button_unselected_hover_color=("#f5f5f5", "#454545"),  # 비활성 탭 호버 색상
-            text_color=("gray20", "gray90"),  # 비활성 탭 텍스트 색상
-            text_color_disabled=("gray40", "gray70")  # 비활성 탭 텍스트 색상
+            corner_radius=6,  # 둥근 모서리 줄임
+            border_width=0,   # 테두리 제거
+            fg_color="transparent",  # 배경색 투명하게
+            segmented_button_fg_color=self.TAB_COLORS['fg_color'],  # 탭 영역 배경색
+            segmented_button_selected_color=self.TAB_COLORS['selected_color'],  # 활성 탭 색상
+            segmented_button_selected_hover_color=self.TAB_COLORS['selected_hover_color'],  # 활성 탭 호버
+            segmented_button_unselected_color=self.TAB_COLORS['unselected_color'],  # 비활성 탭 배경
+            segmented_button_unselected_hover_color=self.TAB_COLORS['unselected_hover_color'],  # 비활성 탭 호버
+            text_color=self.TAB_COLORS['text_color'],  # 활성 탭 텍스트 색상
+            text_color_disabled=self.TAB_COLORS['text_color_disabled']  # 비활성 탭 텍스트 색상
         )
         self.tab_view.grid(row=1, column=0, padx=25, pady=20, sticky="nsew")  # 패딩 더 증가
 
@@ -176,33 +186,16 @@ class SpeciesVerifierApp(ctk.CTk):
         self.tab_view.add("미생물 (LPSN)")
         self.tab_view.add("담수 등 전체생물(COL)")
         
-        # 탭 버튼 스타일 커스터마이징
-        self.tab_view._segmented_button.configure(
-            font=tab_font,
-            height=45,  # 탭 높이 증가
-            corner_radius=8,  # 약간의 둥근 모서리
-            border_width=2,  # 테두리 두께 증가
-            selected_color=("#1f538d", "#2a5a9e"),  # 활성 탭 색상 (더 밝게)
-            selected_hover_color=("#144870", "#1f4a7d"),  # 활성 탭 호버
-            unselected_color=("#f5f5f5", "#404040"),  # 비활성 탭 배경 (더 밝게 구분)
-            unselected_hover_color=("#e9ecef", "#4a4a4a"),  # 비활성 탭 호버
-            text_color=("gray20", "gray90"),  # 비활성 탭 텍스트 색상
-            text_color_disabled=("gray40", "gray70"),  # 비활성 탭 텍스트 색상
-        )
+        # 탭 버튼 스타일 커스터마이징 (공통 색상 사용)
+        self._apply_tab_colors_to_segmented_button(tab_font)
         
-        # 탭뷰 전체 배경 스타일링 (더 명확한 배경색)
+        # 탭뷰 전체 배경 스타일링 (투명 배경)
         self.tab_view.configure(
-            fg_color=("#f8f9fa", "#2b2b2b")  # 더 진한 배경색으로 구분 강화
+            fg_color="transparent"  # 투명 배경
         )
         
-        # 개별 탭 버튼에 추가 스타일 적용
-        for button in self.tab_view._segmented_button._buttons_dict.values():
-            button.configure(
-                font=tab_font,
-                height=45,
-                corner_radius=8,
-                border_width=2
-            )
+        # 개별 탭 버튼에 추가 스타일 적용 (공통 색상 사용)
+        self._apply_tab_colors_to_individual_buttons(tab_font)
 
         # --- 해양생물 탭 컨텐츠 배치 (기존과 동일, 부모만 확인) ---
         marine_tab_content = self.tab_view.tab("해양생물(WoRMS)")
@@ -336,7 +329,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.footer_frame = ctk.CTkFrame(
             self, 
             height=35,  # 높이 증가
-            corner_radius=0,
+            corner_radius=6,
             fg_color=("#f0f0f0", "#2b2b2b"),  # 라이트/다크 모드 배경색
             border_width=1,
             border_color=("#e0e0e0", "#404040")  # 상단 테두리
@@ -2048,6 +2041,10 @@ class SpeciesVerifierApp(ctk.CTk):
             self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
         self.is_verifying = False
         self.is_cancelled = False
+        
+        # 탭 색상 다시 적용 (검증 완료 후 색상 초기화 방지)
+        self._reapply_tab_colors()
+        
         print("[Debug] UI 상태가 초기화되었습니다.")
 
     def _copy_all_info(self, tree_type, item_id):
@@ -2167,6 +2164,9 @@ class SpeciesVerifierApp(ctk.CTk):
         current_tab_name = self.tab_view.get()
         print(f"[Debug Tab Change] Tab changed to: {current_tab_name}")
 
+        # 탭 색상 다시 적용 (검색 후 색상이 초기화되는 문제 해결)
+        self._reapply_tab_colors()
+
         # 현재 탭의 결과 유무 확인
         results_exist = self._check_results_exist()
         print(f"[Debug Tab Change] Results exist in '{current_tab_name}': {results_exist}")
@@ -2176,6 +2176,51 @@ class SpeciesVerifierApp(ctk.CTk):
         status_text = "검증 완료" if results_exist else "입력 대기 중"
         if hasattr(self, 'status_bar'):
             self.status_bar.set_ready(status_text=status_text, show_save_button=results_exist)
+
+    def _reapply_tab_colors(self):
+        """탭 색상을 다시 적용하는 메서드 (공통 색상 사용)"""
+        try:
+            # 탭 폰트 설정
+            tab_font = ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold")
+            
+            # 탭뷰 전체 색상 설정
+            self._apply_tab_colors_to_segmented_button(tab_font)
+            
+            # 개별 탭 버튼 색상 설정
+            self._apply_tab_colors_to_individual_buttons(tab_font)
+            
+            print("[Debug] 탭 색상 다시 적용 완료")
+        except Exception as e:
+            print(f"[Error] 탭 색상 재적용 중 오류: {e}")
+
+    def _apply_tab_colors_to_segmented_button(self, tab_font):
+        """segmented_button에 공통 탭 색상 적용"""
+        self.tab_view._segmented_button.configure(
+            font=tab_font,
+            height=45,  # 탭 높이 증가
+            corner_radius=6,  # 둥근 모서리 줄임
+            border_width=0,  # 테두리 제거
+            selected_color=self.TAB_COLORS['selected_color'],  # 활성 탭 색상
+            selected_hover_color=self.TAB_COLORS['selected_hover_color'],  # 활성 탭 호버
+            unselected_color=self.TAB_COLORS['unselected_color'],  # 비활성 탭 배경
+            unselected_hover_color=self.TAB_COLORS['unselected_hover_color'],  # 비활성 탭 호버
+            text_color=self.TAB_COLORS['text_color'],  # 활성 탭 텍스트 색상
+            text_color_disabled=self.TAB_COLORS['text_color_disabled'],  # 비활성 탭 텍스트 색상
+        )
+
+    def _apply_tab_colors_to_individual_buttons(self, tab_font):
+        """개별 탭 버튼에 공통 탭 색상 적용 (지원되는 속성만)"""
+        for button in self.tab_view._segmented_button._buttons_dict.values():
+            button.configure(
+                font=tab_font,
+                height=45,
+                corner_radius=6,  # 둥근 모서리 줄임
+                border_width=0,  # 테두리 제거
+                # 개별 버튼에서는 selected_color 등의 속성을 지원하지 않음
+                # 텍스트 색상만 설정 가능
+                text_color=self.TAB_COLORS['text_color'],  # 활성 탭 텍스트 색상
+                text_color_disabled=self.TAB_COLORS['text_color_disabled']  # 비활성 탭 텍스트 색상
+            )
 
     # --- COL 탭 트리뷰 이벤트 핸들러 추가 ---
     def _on_col_tree_double_click(self, event):

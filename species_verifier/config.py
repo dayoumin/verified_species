@@ -38,31 +38,48 @@ class APIConfig:
     """외부 API 연결 설정"""
     # WoRMS API 설정
     WORMS_API_URL = os.getenv("WORMS_API_URL", "https://www.marinespecies.org/rest")
-    WORMS_REQUEST_DELAY = 1.0  # 연속 요청 시 딜레이 (초) -> 이 설정은 현재 사용되지 않는 것으로 보임
+    WORMS_REQUEST_DELAY = float(os.getenv("WORMS_REQUEST_DELAY", "1.0"))  # 연속 요청 시 딜레이 (초)
     
     # LPSN 관련 설정 
     LPSN_BASE_URL = "https://lpsn.dsmz.de/species"
     
     # 위키백과 API 설정
     WIKIPEDIA_API_URL = "https://ko.wikipedia.org/w/api.php"
-    WIKIPEDIA_REQUEST_TIMEOUT = 10  # 초 (5 -> 10으로 증가)
+    WIKIPEDIA_REQUEST_TIMEOUT = int(os.getenv("WIKIPEDIA_REQUEST_TIMEOUT", "15"))  # 초 (10 -> 15로 증가)
     
     # Gemini API 설정 (있는 경우)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED = bool(GEMINI_API_KEY)
     
-    # API 요청 지연 시간 및 재시도 설정 (스마트폰 테더링 환경 최적화)
-    REQUEST_DELAY = 1.0  # 각 API 호출 사이의 지연 시간 (초) - 0.5 -> 1.0으로 증가
-    BATCH_DELAY = 3.0  # 배치간 지연 시간 (초) - 2.0 -> 3.0으로 증가
+    # API 요청 지연 시간 및 재시도 설정 (외부망 환경 최적화)
+    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "2.0"))  # 각 API 호출 사이의 지연 시간 (초) - 1.0 -> 2.0으로 증가
+    BATCH_DELAY = float(os.getenv("BATCH_DELAY", "5.0"))  # 배치간 지연 시간 (초) - 3.0 -> 5.0으로 증가
     
-    # 네트워크 안정성 설정
-    REQUEST_TIMEOUT = 15  # HTTP 요청 타임아웃 (초)
-    MAX_RETRIES = 3  # 최대 재시도 횟수
-    RETRY_DELAY = 2.0  # 재시도 간격 (초)
+    # 네트워크 안정성 설정 (외부망 환경을 위해 강화)
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))  # HTTP 요청 타임아웃 (초) - 15 -> 30으로 증가
+    MAX_RETRIES = int(os.getenv("MAX_RETRIES", "5"))  # 최대 재시도 횟수 - 3 -> 5로 증가
+    RETRY_DELAY = float(os.getenv("RETRY_DELAY", "3.0"))  # 재시도 간격 (초) - 2.0 -> 3.0으로 증가
     
     # COL API 설정
     COL_API_URL = "https://api.catalogueoflife.org"
-    COL_REQUEST_TIMEOUT = 20  # COL API 타임아웃 (초)
+    COL_REQUEST_TIMEOUT = int(os.getenv("COL_REQUEST_TIMEOUT", "30"))  # COL API 타임아웃 (초) - 20 -> 30으로 증가
+    
+    # User-Agent 설정 (외부망에서 차단 방지)
+    USER_AGENT = os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    # HTTP 헤더 설정
+    DEFAULT_HEADERS = {
+        'User-Agent': USER_AGENT,
+        'Accept': 'application/json, text/html, */*',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+    
+    # 연결 안정성 설정 (보안 정책 준수)
+    CONNECTION_POOL_SIZE = int(os.getenv("CONNECTION_POOL_SIZE", "10"))
+    CONNECTION_POOL_MAXSIZE = int(os.getenv("CONNECTION_POOL_MAXSIZE", "20"))
 
 class UIConfig:
     """사용자 인터페이스 관련 설정"""

@@ -9,6 +9,7 @@ import pyworms # WoRMS 검증을 위해 필요
 from bs4 import BeautifulSoup # LPSN 스크래핑에 필요
 import traceback
 from typing import Dict, Any, List, Callable
+from species_verifier.config import api_config # api_config 임포트 추가
 
 # 설정 및 다른 모듈 임포트
 try:
@@ -17,6 +18,8 @@ try:
     from .wiki import get_wiki_summary, extract_scientific_name_from_wiki
     from ..utils.helpers import (clean_scientific_name, create_basic_marine_result,
                                create_basic_microbe_result, get_default_taxonomy, is_korean)
+    from species_verifier.config import app_config, api_config
+    from species_verifier.core.worms_api import verify_species_list
 except ImportError as e:
     # 임포트 오류 처리 (로그 제거)
     config = None
@@ -27,6 +30,9 @@ except ImportError as e:
     create_basic_microbe_result = lambda *args: {}
     get_default_taxonomy = lambda x: "정보 없음"
     is_korean = lambda x: False # Fallback
+    verify_species_list = None
+    app_config = None
+    api_config = None
 
 # 사용되지 않는 함수 제거됨
 
@@ -269,21 +275,36 @@ def verify_single_microbe_lpsn(microbe_name):
     species_detail_url = None
     
     try:
-        # LPSN 접근을 위한 헤더 설정
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
+        # LPSN 접근을 위한 헤더 설정 (config에서 가져옴)
+        if api_config is not None:
+            headers = api_config.DEFAULT_HEADERS
+            request_delay = api_config.REQUEST_DELAY
+            request_timeout = api_config.REQUEST_TIMEOUT
+        else:
+            # api_config가 None인 경우 기본값 사용
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            request_delay = 1.0
+            request_timeout = 10
+            print("[Warning LPSN Core] api_config가 None이므로 기본값 사용")
         
         # 학명에서 종명 추출하여 직접 URL 생성 (예: Streptococcus parauberis -> streptococcus-parauberis)
         genus_species = cleaned_name.lower().replace(' ', '-')
         direct_species_url = f"https://lpsn.dsmz.de/species/{genus_species}"
+        search_url = f"https://lpsn.dsmz.de/search?word={cleaned_name.replace(' ', '+')}"  # search_url 정의 추가
         print(f"[Info LPSN Core] 직접 접근 URL: {direct_species_url}")
+        print(f"[Info LPSN Core] 검색 URL: {search_url}")
         
         try:
-            # LPSN 서버 부하 방지를 위한 지연 시간 추가
-            time.sleep(1.0)
-            # 직접 URL 접근 시도
-            direct_response = requests.get(direct_species_url, headers=headers, timeout=10)
+            # LPSN 서버 부하 방지를 위한 지연 시간 추가 (config 값 사용)
+            time.sleep(request_delay)
+            # 직접 URL 접근 시도 (config 값과 헤더 사용)
+            direct_response = requests.get(
+                direct_species_url, 
+                headers=headers,
+                timeout=request_timeout
+            )
             direct_response.raise_for_status()  # 404 등의 오류 확인
             
             # 성공적으로 페이지에 접근했다면 상세 정보 파싱
@@ -500,10 +521,24 @@ def verify_col_species(col_names_list, result_callback=None):
             base_url = "https://api.catalogueoflife.org/"
             search_url = f"{base_url}dataset/3LR/nameusage/search?q={quote(name)}&limit=1"
             
-            # COL API 서버 부하 방지를 위한 지연 시간 추가
-            time.sleep(0.5)
-            # COL API 요청
-            response = requests.get(search_url, timeout=10)
+            # COL API 서버 부하 방지를 위한 지연 시간 추가 (config 값 사용)
+            if api_config is not None:
+                time.sleep(api_config.REQUEST_DELAY)
+                headers = api_config.DEFAULT_HEADERS
+                timeout = api_config.COL_REQUEST_TIMEOUT
+            else:
+                time.sleep(1.0)  # 기본 지연 시간
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                timeout = 10  # 기본 타임아웃
+            
+            # COL API 요청 (config 값과 헤더 사용)
+            response = requests.get(
+                search_url, 
+                headers=headers,
+                timeout=timeout
+            )
             response.raise_for_status()
             data = response.json()
             
