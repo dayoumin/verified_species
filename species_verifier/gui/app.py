@@ -66,9 +66,14 @@ class SpeciesVerifierApp(ctk.CTk):
         self.placeholder_focused = "예: Homo sapiens, Gadus morhua"
         self.placeholder_unfocused = "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
         
-        # 기본 설정
-        self.title("Species Verifier")
-        self.geometry("900x700")
+        # 기본 설정 - 모던한 디자인
+        self.title("🐟 국립수산과학원 학명검증기 v1.1")
+        self.geometry("950x750")  # 크기 증가
+        self.minsize(850, 650)  # 최소 크기 설정
+        
+        # 모던한 색상 테마 설정
+        ctk.set_appearance_mode("system")  # 시스템 테마 따라가기
+        ctk.set_default_color_theme("blue")  # 파란색 테마
         
         # 폰트 설정
         try:
@@ -109,41 +114,95 @@ class SpeciesVerifierApp(ctk.CTk):
     
     def _create_widgets(self):
         """UI 컴포넌트 생성"""
-        # --- 헤더 프레임 (이미지 공간 + 도움말 버튼) ---
-        self.header_frame = ctk.CTkFrame(self, height=60, corner_radius=0)
+        # --- 헤더 프레임 (모던한 디자인) ---
+        self.header_frame = ctk.CTkFrame(
+            self, 
+            height=70,  # 높이 증가
+            corner_radius=0,
+            fg_color=("#ffffff", "#1a1a1a"),  # 깔끔한 배경색
+            border_width=1,
+            border_color=("#e0e0e0", "#404040")  # 하단 테두리
+        )
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
-        # 그리드 설정: 로고(가운데 정렬), 공간, 도움말 버튼(오른쪽 정렬)
+        # 그리드 설정: 로고(왼쪽 정렬), 공간, 도움말 버튼(오른쪽 정렬)
         self.header_frame.grid_columnconfigure(0, weight=1)
         self.header_frame.grid_columnconfigure(1, weight=0)
 
-        # 헤더 텍스트 라벨 표시 (이미지 대신 텍스트 사용)
-        header_label = ctk.CTkLabel(self.header_frame, text="국립수산과학원 학명검증기", font=self.header_text_font)
-        header_label.grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        # 헤더 텍스트 라벨 표시 (더 큰 폰트와 그라데이션 색상)
+        header_label = ctk.CTkLabel(
+            self.header_frame, 
+            text="🐟 국립수산과학원 학명검증기",  # 이모지 추가
+            font=ctk.CTkFont(family="Malgun Gothic", size=20, weight="bold"),  # 크기 증가
+            text_color=("#1f538d", "#4a9eff")  # 파란색 계열
+        )
+        header_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
 
-        # 도움말 버튼 추가 (1번 컬럼, 오른쪽 정렬)
+        # 도움말 버튼 추가 (모던한 스타일)
         self.help_button = ctk.CTkButton(
             self.header_frame,
-            text="도움말",
-            width=80,
-            font=self.default_bold_font,
-            command=self._show_help_popup # 도움말 팝업 함수 연결
+            text="❓ 도움말",  # 이모지 추가
+            width=100,
+            height=35,
+            font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),
+            fg_color=("#1f538d", "#14375e"),  # 파란색 계열
+            hover_color=("#144870", "#0d2a47"),
+            corner_radius=8,
+            command=self._show_help_popup
         )
-        self.help_button.grid(row=0, column=1, padx=(0, 20), pady=10, sticky="e")
+        self.help_button.grid(row=0, column=1, padx=(0, 20), pady=15, sticky="e")
 
-        # --- CTkTabview 생성 (1행으로 이동) ---
+        # --- CTkTabview 생성 (1행으로 이동) - 더 세련된 디자인 ---
         self.tab_view = ctk.CTkTabview(
             self, 
-            command=self._on_tab_change
+            command=self._on_tab_change,
+            corner_radius=12,  # 둥근 모서리 추가
+            border_width=2,   # 테두리 두께 증가
+            border_color=("#b0b0b0", "#606060"),  # 테두리 색상 더 진하게
+            fg_color=("#ffffff", "#2a2a2a"),  # 배경색 더 명확하게
+            segmented_button_fg_color=("#f0f0f0", "#404040"),  # 탭 영역 배경색
+            segmented_button_selected_color=("#1f538d", "#2a5a9e"),  # 활성 탭 색상 (파란색)
+            segmented_button_selected_hover_color=("#144870", "#1f4a7d"),  # 활성 탭 호버 색상
+            segmented_button_unselected_color=("#ffffff", "#353535"),  # 비활성 탭 배경 (더 밝게)
+            segmented_button_unselected_hover_color=("#f5f5f5", "#454545"),  # 비활성 탭 호버 색상
+            text_color=("gray20", "gray90"),  # 비활성 탭 텍스트 색상
+            text_color_disabled=("gray40", "gray70")  # 비활성 탭 텍스트 색상
         )
-        self.tab_view.grid(row=1, column=0, padx=10, pady=(5, 0), sticky="nsew") # pady 상단 추가
+        self.tab_view.grid(row=1, column=0, padx=25, pady=20, sticky="nsew")  # 패딩 더 증가
 
-        # 탭 추가 (볼드체로 설정)
-        tab_font = self.default_bold_font
-        self.tab_view._segmented_button.configure(font=tab_font)  # 모든 탭 버튼에 볼드체 적용
+        # 탭 추가 및 현대적 스타일 적용
+        tab_font = ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold")  # 탭 폰트 크기 증가
         
         self.tab_view.add("해양생물(WoRMS)")
         self.tab_view.add("미생물 (LPSN)")
         self.tab_view.add("담수 등 전체생물(COL)")
+        
+        # 탭 버튼 스타일 커스터마이징
+        self.tab_view._segmented_button.configure(
+            font=tab_font,
+            height=45,  # 탭 높이 증가
+            corner_radius=8,  # 약간의 둥근 모서리
+            border_width=2,  # 테두리 두께 증가
+            selected_color=("#1f538d", "#2a5a9e"),  # 활성 탭 색상 (더 밝게)
+            selected_hover_color=("#144870", "#1f4a7d"),  # 활성 탭 호버
+            unselected_color=("#f5f5f5", "#404040"),  # 비활성 탭 배경 (더 밝게 구분)
+            unselected_hover_color=("#e9ecef", "#4a4a4a"),  # 비활성 탭 호버
+            text_color=("gray20", "gray90"),  # 비활성 탭 텍스트 색상
+            text_color_disabled=("gray40", "gray70"),  # 비활성 탭 텍스트 색상
+        )
+        
+        # 탭뷰 전체 배경 스타일링 (더 명확한 배경색)
+        self.tab_view.configure(
+            fg_color=("#f8f9fa", "#2b2b2b")  # 더 진한 배경색으로 구분 강화
+        )
+        
+        # 개별 탭 버튼에 추가 스타일 적용
+        for button in self.tab_view._segmented_button._buttons_dict.values():
+            button.configure(
+                font=tab_font,
+                height=45,
+                corner_radius=8,
+                border_width=2
+            )
 
         # --- 해양생물 탭 컨텐츠 배치 (기존과 동일, 부모만 확인) ---
         marine_tab_content = self.tab_view.tab("해양생물(WoRMS)")
@@ -261,30 +320,56 @@ class SpeciesVerifierApp(ctk.CTk):
         )
         self.result_tree_col.widget.grid(row=2, column=0, sticky="nsew", padx=5, pady=(0, 5))
         
-        # --- 상태 바 생성 (2행으로 이동) ---
+        # --- 상태 바 생성 (2행으로 이동) - 모던한 디자인 ---
         self.status_bar = StatusBar(
             self,
-            height=30,
+            height=35,  # 높이 증가
             font=self.default_font,
             save_command=self._export_active_tab_results # 현재 탭 결과 저장 명령 연결
         )
-        self.status_bar.widget.grid(row=2, column=0, padx=10, pady=(5, 5), sticky="nsew")
+        self.status_bar.widget.grid(row=2, column=0, padx=15, pady=8, sticky="nsew")  # 패딩 증가
         self.status_bar.set_cancel_command(self._cancel_operation) # 취소 명령 설정
         # StatusBar 초기 상태 설정 (저장 버튼 숨김)
-        self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+        self.status_bar.set_ready(status_text="✅ 입력 대기 중", show_save_button=False)  # 이모지 추가
         
-        # --- 푸터 생성 (3행으로 이동) ---
-        self.footer_frame = ctk.CTkFrame(self, height=20, corner_radius=0)
-        self.footer_frame.grid(row=3, column=0, padx=0, pady=(2, 0), sticky="nsew")
-        self.footer_frame.grid_columnconfigure(0, weight=1)
-        
-        self.footer_label = ctk.CTkLabel(
-            self.footer_frame,
-            text="© 2025 국립수산과학원 수산생명자원 책임기관",
-            font=self.footer_font,
-            text_color=("gray50", "gray60")
+        # --- 푸터 생성 (3행으로 이동) - 모던한 디자인 ---
+        self.footer_frame = ctk.CTkFrame(
+            self, 
+            height=35,  # 높이 증가
+            corner_radius=0,
+            fg_color=("#f0f0f0", "#2b2b2b"),  # 라이트/다크 모드 배경색
+            border_width=1,
+            border_color=("#e0e0e0", "#404040")  # 상단 테두리
         )
-        self.footer_label.grid(row=0, column=0, pady=(0, 2))
+        self.footer_frame.grid(row=3, column=0, padx=0, pady=0, sticky="nsew")
+        self.footer_frame.grid_columnconfigure(0, weight=1)  # 중앙 정렬을 위해 전체 가중치
+        
+        # 중앙 컨테이너 프레임 생성
+        center_container = ctk.CTkFrame(
+            self.footer_frame,
+            fg_color="transparent"  # 투명 배경
+        )
+        center_container.grid(row=0, column=0, pady=8)
+        center_container.grid_columnconfigure(0, weight=0)
+        center_container.grid_columnconfigure(1, weight=0)
+        
+        # 메인 책임기관 라벨 (중앙 배치)
+        self.footer_label = ctk.CTkLabel(
+            center_container,
+            text="© 2025 국립수산과학원 수산생명자원 책임기관",
+            font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),  # 크기와 굵기 증가
+            text_color=("#1f538d", "#4a9eff")  # 파란색 계열로 강조
+        )
+        self.footer_label.grid(row=0, column=0, padx=(0, 10))
+        
+        # 버전 정보 라벨 추가 (중앙 배치)
+        self.version_label = ctk.CTkLabel(
+            center_container,
+            text="v0.5",  # 버전 수정
+            font=ctk.CTkFont(family="Malgun Gothic", size=10),
+            text_color=("gray50", "gray70")
+        )
+        self.version_label.grid(row=0, column=1)
     
     def _setup_callbacks(self):
         """콜백 설정"""
