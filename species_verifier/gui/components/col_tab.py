@@ -23,7 +23,6 @@ class ColTabFrame(BaseTabFrame):
         placeholder_text: str = "통합생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
         max_file_processing_limit: int = 3000,
         max_direct_input_limit: int = 20,  # 직접 입력 한계 추가
-        direct_export_threshold: int = 100,
         **kwargs
     ):
         self.font = font
@@ -31,7 +30,6 @@ class ColTabFrame(BaseTabFrame):
         self.placeholder_text = placeholder_text
         self.max_file_processing_limit = max_file_processing_limit
         self.max_direct_input_limit = max_direct_input_limit  # 직접 입력 한계 저장
-        self.direct_export_threshold = direct_export_threshold
         self.entry_var = tk.StringVar()
         self.file_path_var = tk.StringVar()
         self.entry = None

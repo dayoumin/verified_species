@@ -26,7 +26,6 @@ class MicrobeTabFrame(BaseTabFrame):
         placeholder_text: str = "미생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
         max_file_processing_limit: int = 3000,
         max_direct_input_limit: int = 20,  # 직접 입력 한계 추가
-        direct_export_threshold: int = 100,
         **kwargs
     ):
         """
@@ -39,7 +38,6 @@ class MicrobeTabFrame(BaseTabFrame):
             placeholder_text: 입력 필드 기본 텍스트
             max_file_processing_limit: 최대 파일 처리 한도
             max_direct_input_limit: 직접 입력 최대 항목 수
-            direct_export_threshold: 직접 내보내기 임계값
             **kwargs: 추가 인자
         """
         self.font = font
@@ -47,7 +45,6 @@ class MicrobeTabFrame(BaseTabFrame):
         self.placeholder_text = placeholder_text
         self.max_file_processing_limit = max_file_processing_limit
         self.max_direct_input_limit = max_direct_input_limit  # 직접 입력 한계 저장
-        self.direct_export_threshold = direct_export_threshold
         
         # 입력 프레임 초기화
         self.entry_var = tk.StringVar()

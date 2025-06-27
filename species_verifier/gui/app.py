@@ -160,7 +160,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.placeholder_unfocused = "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
         
         # 기본 설정 - 모던한 디자인
-        self.title("🐟 국립수산과학원 학명검증기 v0.5")
+        self.title("🐟 국립수산과학원 학명검증기")
         self.geometry("950x750")  # 크기 증가
         self.minsize(850, 650)  # 최소 크기 설정
         
@@ -186,7 +186,6 @@ class SpeciesVerifierApp(ctk.CTk):
         # 설정값 적용
         self.MAX_RESULTS_DISPLAY = app_config.MAX_RESULTS_DISPLAY
         self.MAX_FILE_PROCESSING_LIMIT = app_config.MAX_FILE_PROCESSING_LIMIT
-        self.DIRECT_EXPORT_THRESHOLD = app_config.DIRECT_EXPORT_THRESHOLD
         self.MAX_DIRECT_INPUT_LIMIT = app_config.MAX_DIRECT_INPUT_LIMIT  # 새로 추가
         
         # 그리드 설정 (수정: 헤더 추가)
@@ -294,15 +293,14 @@ class SpeciesVerifierApp(ctk.CTk):
             bold_font=self.default_bold_font,
             placeholder_text=self.placeholder_focused,
             max_direct_input_limit=self.MAX_DIRECT_INPUT_LIMIT,  # 직접 입력 제한 전달
-            max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT,
-            direct_export_threshold=self.DIRECT_EXPORT_THRESHOLD
+            max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT
         )
         self.marine_tab.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
 
-        # 안내 레이블 추가 및 배치
+        # 안내 레이블 추가 및 배치 (해양생물 탭)
         self.marine_info_label = ctk.CTkLabel(
             marine_tab_content,
-            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"
@@ -337,10 +335,10 @@ class SpeciesVerifierApp(ctk.CTk):
         )
         self.microbe_tab.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
         
-        # 안내 레이블 추가 및 배치
+        # 안내 레이블 추가 및 배치 (미생물 탭)
         self.microbe_info_label = ctk.CTkLabel(
             microbe_tab_content,
-            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"
@@ -372,15 +370,14 @@ class SpeciesVerifierApp(ctk.CTk):
             bold_font=self.default_bold_font,
             placeholder_text="예: Homo sapiens, Gadus morhua",
             max_direct_input_limit=self.MAX_DIRECT_INPUT_LIMIT,  # 직접 입력 제한 전달
-            max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT,
-            direct_export_threshold=self.DIRECT_EXPORT_THRESHOLD
+            max_file_processing_limit=self.MAX_FILE_PROCESSING_LIMIT
         )
         self.col_tab.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
 
         # 안내 레이블 추가 및 배치 (COL 탭)
         self.col_info_label = ctk.CTkLabel(
             col_tab_content,
-            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"

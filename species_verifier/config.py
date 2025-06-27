@@ -25,7 +25,6 @@ class AppConfig:
     MAX_FILE_PROCESSING_LIMIT = 3000  # 한 번에 처리할 수 있는 최대 항목 수
     BATCH_SIZE = 100  # 배치 처리 크기 - 서버 과부하 방지를 위해 적정 수준 유지
     MAX_RESULTS_DISPLAY = 100  # 한 번에 표시할 수 있는 최대 결과 수
-    DIRECT_EXPORT_THRESHOLD = 100  # 이 수치보다 많은 결과는 바로 파일로 내보내기
     
     # 로깅 설정
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
