@@ -322,3 +322,64 @@ class ColTabFrame(BaseTabFrame):
         이후 UI에 필터 기능이 추가될 경우, 이 메서드를 수정하여 선택된 값을 반환하도록 하면 됩니다.
         """
         return None
+    
+    def set_input_state(self, state: str):
+        """입력 요소들의 상태를 설정합니다 (활성화/비활성화)"""
+        try:
+            # state가 'normal' 또는 'disabled'인지 확인
+            tkinter_state = tk.NORMAL if state in ["normal", "idle"] else tk.DISABLED
+            
+            # 텍스트 입력 필드
+            if hasattr(self, 'entry') and self.entry:
+                if tkinter_state == tk.DISABLED:
+                    self.entry.configure(state="disabled")
+                else:
+                    self.entry.configure(state="normal")
+            
+            # 파일 찾기 버튼
+            if hasattr(self, 'file_browse_button') and self.file_browse_button:
+                if tkinter_state == tk.DISABLED:
+                    self.file_browse_button.configure(state="disabled")
+                else:
+                    self.file_browse_button.configure(state="normal")
+            
+            # 파일 지우기 버튼
+            if hasattr(self, 'file_clear_button') and self.file_clear_button:
+                if tkinter_state == tk.DISABLED:
+                    self.file_clear_button.configure(state="disabled")
+                else:
+                    self.file_clear_button.configure(state="normal")
+            
+            # 검증 버튼 (검증 중이 아닐 때만 상태 업데이트)
+            if hasattr(self, 'verify_button') and self.verify_button and tkinter_state == tk.NORMAL:
+                # 검증 중이 아닐 때는 입력 상태에 따라 버튼 활성화
+                self._update_verify_button_state()
+            elif hasattr(self, 'verify_button') and self.verify_button and tkinter_state == tk.DISABLED:
+                # 검증 중일 때: 버튼은 비활성화하고 텍스트 색상을 옅게 표시
+                self.verify_button.configure(
+                    state="disabled",
+                    text_color=self.COMMON_COLORS['button_text_verifying']
+                )
+            
+            print(f"[Debug COL] 입력 상태 변경 완료: {state}")
+            
+        except Exception as e:
+            print(f"[Error COL] 입력 상태 변경 중 오류: {e}")
+    
+    def _update_verify_button_state(self):
+        """입력 상태에 따라 검증 버튼 상태를 업데이트합니다"""
+        try:
+            # 텍스트 입력 검증
+            is_text_valid = self.text_entry_count > 0 and self.text_entry_count <= self.max_direct_input_limit
+            
+            # 파일 입력 검증
+            is_file_valid = self.file_entry_count > 0
+            
+            # 둘 중 하나라도 유효하면 버튼 활성화
+            if is_text_valid or is_file_valid:
+                self.verify_button.configure(state="normal")
+            else:
+                self.verify_button.configure(state="disabled")
+                
+        except Exception as e:
+            print(f"[Error COL] 검증 버튼 상태 업데이트 중 오류: {e}")

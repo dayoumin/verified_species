@@ -52,7 +52,7 @@ def setup_logger():
     
     # 로그 파일 위치 출력
     print(f"로그 파일: {log_file}")
-    logger.info(f"Species Verifier 시작 - v1.1")
+    logger.info(f"Species Verifier 시작 - v0.5")
     logger.debug(f"로그 파일: {log_file}")
     logger.debug(f"Python: {sys.version.split()[0]}")
     logger.debug(f"환경: {'실행파일' if getattr(sys, 'frozen', False) else '개발환경'}")

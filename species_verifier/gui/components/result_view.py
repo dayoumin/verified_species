@@ -51,11 +51,11 @@ class ResultTreeview(BaseResultView):
         # Treeview 생성 (기존 코드 유지, 부모만 self.widget으로)
         columns = []
         if self.tab_type == "marine":
-            columns = ("mapped_name", "verified", "worms_status", "worms_id", "worms_url", "summary")
+            columns = ("mapped_name", "verified", "worms_status", "worms_id", "worms_url")
         elif self.tab_type == "microbe":
-            columns = ("valid_name", "verified", "status", "taxonomy", "link", "summary")
+            columns = ("valid_name", "verified", "status", "taxonomy", "link")
         elif self.tab_type == "col":
-            columns = ("valid_name", "verified", "col_status", "col_id", "col_url", "summary")
+            columns = ("valid_name", "verified", "col_status", "col_id", "col_url")
             
         self.tree = ttk.Treeview(self.widget, columns=columns, show="headings", 
                                  yscrollcommand=self.scrollbar_y.set, 
@@ -78,15 +78,13 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("worms_status", text="WoRMS 상태")
             self.tree.heading("worms_id", text="WoRMS ID")
             self.tree.heading("worms_url", text="WoRMS URL")
-            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
-            self.tree.column("mapped_name", width=150, minwidth=100)
+            self.tree.column("mapped_name", width=180, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("worms_status", width=120, minwidth=80, anchor='center')
-            self.tree.column("worms_id", width=80, minwidth=50, anchor='center')
-            self.tree.column("worms_url", width=120, minwidth=80)
-            self.tree.column("summary", width=300, minwidth=150)
+            self.tree.column("worms_status", width=150, minwidth=100, anchor='center')
+            self.tree.column("worms_id", width=100, minwidth=60, anchor='center')
+            self.tree.column("worms_url", width=150, minwidth=100)
             
         elif self.tab_type == "microbe":
             # 열 헤더 설정
@@ -95,15 +93,13 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("status", text="상태")
             self.tree.heading("taxonomy", text="분류")
             self.tree.heading("link", text="LPSN 링크")
-            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
-            self.tree.column("valid_name", width=150, minwidth=100)
+            self.tree.column("valid_name", width=180, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("status", width=120, minwidth=80, anchor='center')
-            self.tree.column("taxonomy", width=250, minwidth=150)
-            self.tree.column("link", width=120, minwidth=80)
-            self.tree.column("summary", width=300, minwidth=150)
+            self.tree.column("status", width=150, minwidth=100, anchor='center')
+            self.tree.column("taxonomy", width=300, minwidth=200)
+            self.tree.column("link", width=150, minwidth=100)
         
         elif self.tab_type == "col":
             # 열 헤더 설정
@@ -112,15 +108,13 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("col_status", text="COL 상태")
             self.tree.heading("col_id", text="COL ID")
             self.tree.heading("col_url", text="COL URL")
-            self.tree.heading("summary", text="심층분석 결과")
             
             # 열 너비 설정
-            self.tree.column("valid_name", width=150, minwidth=100)
+            self.tree.column("valid_name", width=180, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("col_status", width=120, minwidth=80, anchor='center')
-            self.tree.column("col_id", width=100, minwidth=50, anchor='center')
-            self.tree.column("col_url", width=120, minwidth=80)
-            self.tree.column("summary", width=300, minwidth=150)
+            self.tree.column("col_status", width=150, minwidth=100, anchor='center')
+            self.tree.column("col_id", width=120, minwidth=70, anchor='center')
+            self.tree.column("col_url", width=180, minwidth=120)
         
         # 태그 설정
         self.tree.tag_configure('verified', background='#e6ffe6')
@@ -200,7 +194,6 @@ class ResultTreeview(BaseResultView):
             worms_status = result.worms_status
             worms_id = result.worms_id
             worms_link = result.worms_link
-            wiki_summary = result.wiki_summary
         else:  # 딕셔너리 가정
             input_name = result.get('input_name', '-')
             mapped_name = result.get('mapped_name', '-')
@@ -208,13 +201,6 @@ class ResultTreeview(BaseResultView):
             worms_status = result.get('worms_status', '-')
             worms_id = result.get('worms_id', '-')
             worms_link = result.get('worms_link', '-')
-            wiki_summary = result.get('wiki_summary', '-')
-        
-        # 요약이 너무 길면 자르기
-        if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
-            display_summary = wiki_summary[:57] + '...'
-        else:
-            display_summary = wiki_summary or '-'
         
         # 태그 결정 (상태에 따라)
         tag = 'verified' if is_verified else 'unverified'
@@ -223,14 +209,13 @@ class ResultTreeview(BaseResultView):
         elif any(status in str(worms_status).lower() for status in ['alternate', 'synonym']):
             tag = 'caution'
             
-        # 아이템 추가
+        # 아이템 추가 (summary 컬럼 제거)
         self.tree.insert("", insert_at_index, text=input_name, values=(
             mapped_name,
             "✓" if is_verified else "✗",
             worms_status,
             worms_id,
-            worms_link,
-            display_summary
+            worms_link
         ), tags=(tag,))
     
     def _display_microbe_result(self, result: Any, insert_at_index=tk.END):
@@ -249,7 +234,6 @@ class ResultTreeview(BaseResultView):
             status = result.status
             taxonomy = result.taxonomy
             lpsn_link = result.lpsn_link
-            wiki_summary = result.wiki_summary
             is_microbe = result.is_microbe
         else:  # 딕셔너리 가정
             # 리스트인 경우 첫 번째 항목을 사용
@@ -262,7 +246,6 @@ class ResultTreeview(BaseResultView):
             status = result.get('status', '-')
             taxonomy = result.get('taxonomy', '-')
             lpsn_link = result.get('lpsn_link', '-')
-            wiki_summary = result.get('wiki_summary', '-')
             is_microbe = result.get('is_microbe', False)
         
         # --- 수정: valid_name이 없을 경우 input_name 사용 ---
@@ -270,12 +253,6 @@ class ResultTreeview(BaseResultView):
         if not display_name or display_name == '-':
             display_name = input_name # 유효 학명이 없으면 입력 학명 표시
 
-        # 요약이 너무 길면 자르기
-        if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
-            display_summary = wiki_summary[:57] + '...'
-        else:
-            display_summary = wiki_summary or '-'
-        
         # 태그 결정 (상태에 따라)
         tag = 'unverified'
         
@@ -304,8 +281,7 @@ class ResultTreeview(BaseResultView):
             "✓" if is_verified else "✗",
             status,
             taxonomy,
-            lpsn_link,
-            display_summary
+            lpsn_link
         ), tags=(tag,))
     
     def _display_col_result(self, result: Any, insert_at_index=tk.END):
@@ -325,13 +301,6 @@ class ResultTreeview(BaseResultView):
         col_status = result.get('status', result.get('COL 상태', '-'))
         col_id = result.get('col_id', result.get('COL ID', '-'))
         col_url = result.get('col_url', result.get('COL URL', '-'))
-        wiki_summary = result.get('summary', result.get('심층분석 결과', '-'))
-        
-        # 요약이 너무 길면 자르기
-        if isinstance(wiki_summary, str) and len(wiki_summary) > 60:
-            display_summary = wiki_summary[:57] + '...'
-        else:
-            display_summary = wiki_summary or '-'
         
         # 중요: 백엔드에서 제공하는 is_verified 값을 우선 사용
         is_verified = result.get('is_verified', False)
@@ -361,8 +330,7 @@ class ResultTreeview(BaseResultView):
             "✓" if is_verified else "✗",
             col_status,
             col_id,
-            col_url,
-            display_summary
+            col_url
         ), tags=(tag,))
     
     def add_result(self, result: Any):

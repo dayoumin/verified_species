@@ -35,7 +35,7 @@ VSVersionInfo(
         StringStruct(u'InternalName', u'SpeciesVerifier'),
         StringStruct(u'LegalCopyright', u'© 2025 국립수산과학원 수산생명자원 학명검증 연구팀. All rights reserved.'),
         StringStruct(u'OriginalFilename', u'SpeciesVerifier.exe'),
-        StringStruct(u'ProductName', u'Species Verifier - 학명검증기 v1.1'),
+        StringStruct(u'ProductName', u'Species Verifier - 학명검증기 v0.5'),
         StringStruct(u'ProductVersion', u'1.1.0.0')])
       ]), 
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])

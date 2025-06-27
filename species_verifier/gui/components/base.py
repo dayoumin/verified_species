@@ -70,6 +70,7 @@ class BaseTabFrame(ctk.CTkFrame):  # 기존 클래스에서 ctk.CTkFrame을 상�
         'button_text': "white",                 # 버튼 텍스트 색상 (항상 흰색)
         'button_text_disabled': "white",        # 비활성화된 버튼 텍스트 색상 (항상 흰색)
         'button_text_hover': "white",           # 호버 시 버튼 텍스트 색상 (항상 흰색)
+        'button_text_verifying': ("gray80", "gray60"),  # 검증 중 버튼 텍스트 색상 (옅은 색)
     }
     
     def __init__(self, parent, *args, **kwargs):

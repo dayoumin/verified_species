@@ -54,7 +54,7 @@ class APIConfig:
     
     # API 요청 지연 시간 및 재시도 설정
     REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.0"))  # 실시간 처리용 지연 시간 (2.0 -> 1.0초로 단축)
-    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.5"))  # 실시간 처리 전용 지연 시간 (새로 추가)
+    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.3"))  # 실시간 처리 전용 지연 시간 (0.5 -> 0.3초로 단축)
     BATCH_DELAY = float(os.getenv("BATCH_DELAY", "3.0"))  # 배치간 지연 시간 (초) - 파일 처리용 유지
     
     # 네트워크 안정성 설정 (외부망 환경을 위해 강화)

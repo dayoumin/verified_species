@@ -160,7 +160,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.placeholder_unfocused = "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
         
         # 기본 설정 - 모던한 디자인
-        self.title("🐟 국립수산과학원 학명검증기 v1.1")
+        self.title("🐟 국립수산과학원 학명검증기 v0.5")
         self.geometry("950x750")  # 크기 증가
         self.minsize(850, 650)  # 최소 크기 설정
         
@@ -201,6 +201,8 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 콜백 설정
         self._setup_callbacks()
+        
+
         
         # 큐 처리기 시작
         self._process_result_queue()
@@ -300,7 +302,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 안내 레이블 추가 및 배치
         self.marine_info_label = ctk.CTkLabel(
             marine_tab_content,
-            text="※ 결과가 100건을 초과하면 자동으로 파일로 저장됩니다.",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"
@@ -338,7 +340,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 안내 레이블 추가 및 배치
         self.microbe_info_label = ctk.CTkLabel(
             microbe_tab_content,
-            text="※ 결과가 100건을 초과하면 자동으로 파일로 저장됩니다.",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"
@@ -378,7 +380,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 안내 레이블 추가 및 배치 (COL 탭)
         self.col_info_label = ctk.CTkLabel(
             col_tab_content,
-            text="※ 결과가 100건을 초과하면 자동으로 파일로 저장됩니다.",
+            text="※ 직접 입력(10개 이하): 실시간 처리 | 파일 입력: 배치 처리 | 결과 100건 초과 시 자동 저장",
             font=ctk.CTkFont(family="Malgun Gothic", size=10),
             text_color=("gray50", "gray70"),
             anchor="e"
@@ -614,6 +616,12 @@ class SpeciesVerifierApp(ctk.CTk):
         self.marine_total_items = 0
         self.microbe_total_items = 0
         
+        # 새 검색 시작 시 기존 결과 지우기
+        print("[Debug] 새 검색 시작 - COL 탭 기존 결과 지우기")
+        self.current_results_col.clear()
+        if hasattr(self, 'result_tree_col') and self.result_tree_col:
+            self.result_tree_col.clear()
+        
         # 처리 방식에 따른 진행 UI 표시
         processing_type = "실시간" if use_realtime else "배치"
         self._show_progress_ui(f"COL {processing_type} 검증 준비 중...")
@@ -638,121 +646,163 @@ class SpeciesVerifierApp(ctk.CTk):
             self.total_verification_items = len(verification_list)
             print(f"[Debug COL] 전체 COL 항목 수 설정: {self.total_verification_items}")
             
-            # 배치 처리 설정
+            # 설정 로드
             from species_verifier.config import app_config, api_config
-            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
-            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
             
-            total_items = len(verification_list)
-            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
-            
-            print(f"[Info COL] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
-            print(f"[Info COL] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
-            
-            # 배치별 처리
-            processed_items = 0
-            for batch_idx in range(total_batches):
-                # 취소 확인
-                if self.is_cancelled:
-                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
-                    break
+            # 실시간 처리 vs 배치 처리
+            if use_realtime:
+                # 실시간 처리 - 배치 지연 없이 빠르게 처리
+                print(f"[Info COL] 실시간 처리 시작: 총 {len(verification_list)}개 항목")
                 
-                # 현재 배치 생성
-                start_idx = batch_idx * BATCH_SIZE
-                end_idx = min(start_idx + BATCH_SIZE, total_items)
-                current_batch = verification_list[start_idx:end_idx]
-                
-                print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
-                
-                # 배치 진행률 업데이트
-                batch_progress = batch_idx / total_batches
-                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
-                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
-                
-                # 현재 배치 내 개별 항목 처리
-                try:
-                    for item_idx, name in enumerate(current_batch):
-                        # 항목별 취소 확인
-                        if self.is_cancelled:
-                            print(f"[Info COL] 배치 {batch_idx + 1} 내 항목 처리 중 취소 감지")
-                            break
-                        
-                        input_name_display = name
-                        query = name
-                        if isinstance(name, (tuple, list)):
-                            input_name_display = name[0]
-                            query = name[1] if len(name) > 1 else name[0]
-                        
-                        # 항목별 진행률 업데이트
-                        current_item = batch_idx * BATCH_SIZE + item_idx + 1
-                        item_progress = batch_progress + ((item_idx + 1) / len(current_batch)) / total_batches
-                        self.after(0, lambda p=item_progress, c=current_item: self.update_progress(p, c, total_items))
-                        self.after(0, lambda d=input_name_display, c=current_item: 
-                                  self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: '{d[:20]}' 검증 중... ({c}/{total_items})"))
-                        
-                        # 검증 실행
-                        start_time = time.time()
-                        # COL API 함수는 rank 매개변수를 지원하지 않으므로 제거
-                        result = verify_col_species(query)
-                        duration = time.time() - start_time
-                        
-                        print(f"[Debug] COL 항목 {current_item}/{total_items} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
-                        
-                        # 결과 처리
-                        result['input_name'] = input_name_display
-                        if not self.is_cancelled:
-                            self.result_queue.put((result, 'col'))
-                            print(f"[Debug] COL 결과를 COL 탭에 추가: {result.get('input_name', '')}")
-                        
-                        processed_items += 1
+                # 실시간 처리 - 개별 항목 처리
+                processed_items = 0
+                for item_idx, name in enumerate(verification_list):
+                    # 항목별 취소 확인
+                    if self.is_cancelled:
+                        print(f"[Info COL] 실시간 처리 중 취소 감지")
+                        break
                     
-                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                    input_name_display = name
+                    query = name
+                    if isinstance(name, (tuple, list)):
+                        input_name_display = name[0]
+                        query = name[1] if len(name) > 1 else name[0]
                     
-                except Exception as e:
-                    print(f"[Error COL] 배치 {batch_idx + 1} 처리 중 오류: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    # 항목별 진행률 업데이트
+                    current_item = item_idx + 1
+                    item_progress = current_item / len(verification_list)
+                    self.after(0, lambda p=item_progress, c=current_item: self.update_progress(p, c, len(verification_list)))
+                    self.after(0, lambda d=input_name_display, c=current_item: 
+                              self._update_progress_label(f"실시간: '{d[:20]}' 검증 중... ({c}/{len(verification_list)})"))
+                    
+                    # 검증 실행 (실시간 모드에서는 지연 시간 최소화)
+                    start_time = time.time()
+                    result = verify_col_species(query)
+                    duration = time.time() - start_time
+                    
+                    print(f"[Debug] COL 실시간 항목 {current_item}/{len(verification_list)} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
+                    
+                    # 결과 처리
+                    result['input_name'] = input_name_display
+                    if not self.is_cancelled:
+                        self.result_queue.put((result, 'col'))
+                        print(f"[Debug] COL 실시간 결과 추가: {result.get('input_name', '')}")
+                    
+                    processed_items += 1
+                    
+                    # 실시간 처리에서는 짧은 지연만 적용 (0.5초)
+                    if item_idx < len(verification_list) - 1 and not self.is_cancelled:
+                        time.sleep(api_config.REALTIME_REQUEST_DELAY)  # 0.5초
                 
-                # 마지막 배치가 아니면 배치간 지연 시간 적용
-                if batch_idx < total_batches - 1 and not self.is_cancelled:
-                    print(f"[Info COL] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
-                    time.sleep(BATCH_DELAY)
+                print(f"[Info COL] 실시간 처리 완료: {processed_items}/{len(verification_list)}개 항목 처리됨")
                 
-                # 취소 확인 (지연 후)
-                if self.is_cancelled:
-                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
-                    break
+            else:
+                # 배치 처리 - 기존 방식
+                BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+                BATCH_DELAY = api_config.BATCH_DELAY  # 3.0초
+                
+                total_items = len(verification_list)
+                total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
+                
+                print(f"[Info COL] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+                print(f"[Info COL] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
+                
+                # 배치별 처리
+                processed_items = 0
+                for batch_idx in range(total_batches):
+                    # 취소 확인
+                    if self.is_cancelled:
+                        print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
+                        break
+                    
+                    # 현재 배치 생성
+                    start_idx = batch_idx * BATCH_SIZE
+                    end_idx = min(start_idx + BATCH_SIZE, total_items)
+                    current_batch = verification_list[start_idx:end_idx]
+                    
+                    print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                    
+                    # 배치 진행률 업데이트
+                    batch_progress = batch_idx / total_batches
+                    self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                    self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                    
+                    # 현재 배치 내 개별 항목 처리
+                    try:
+                        for item_idx, name in enumerate(current_batch):
+                            # 항목별 취소 확인
+                            if self.is_cancelled:
+                                print(f"[Info COL] 배치 {batch_idx + 1} 내 항목 처리 중 취소 감지")
+                                break
+                            
+                            input_name_display = name
+                            query = name
+                            if isinstance(name, (tuple, list)):
+                                input_name_display = name[0]
+                                query = name[1] if len(name) > 1 else name[0]
+                            
+                            # 항목별 진행률 업데이트
+                            current_item = batch_idx * BATCH_SIZE + item_idx + 1
+                            item_progress = batch_progress + ((item_idx + 1) / len(current_batch)) / total_batches
+                            self.after(0, lambda p=item_progress, c=current_item: self.update_progress(p, c, total_items))
+                            self.after(0, lambda d=input_name_display, c=current_item: 
+                                      self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: '{d[:20]}' 검증 중... ({c}/{total_items})"))
+                            
+                            # 검증 실행
+                            start_time = time.time()
+                            result = verify_col_species(query)
+                            duration = time.time() - start_time
+                            
+                            print(f"[Debug] COL 배치 항목 {current_item}/{total_items} '{input_name_display[:20]}' 완료: 소요시간 {duration:.2f}초")
+                            
+                            # 결과 처리
+                            result['input_name'] = input_name_display
+                            if not self.is_cancelled:
+                                self.result_queue.put((result, 'col'))
+                                print(f"[Debug] COL 배치 결과 추가: {result.get('input_name', '')}")
+                            
+                            processed_items += 1
+                            
+                            # 배치 처리에서는 기본 지연 적용 (1.0초)
+                            if not self.is_cancelled:
+                                time.sleep(api_config.REQUEST_DELAY)  # 1.0초
+                        
+                        print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                        
+                    except Exception as e:
+                        print(f"[Error COL] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    # 마지막 배치가 아니면 배치간 지연 시간 적용
+                    if batch_idx < total_batches - 1 and not self.is_cancelled:
+                        print(f"[Info COL] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                        time.sleep(BATCH_DELAY)
+                    
+                    # 취소 확인 (지연 후)
+                    if self.is_cancelled:
+                        print(f"[Info COL] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
+                        break
+                
+                if not self.is_cancelled:
+                    print(f"[Info COL] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
+                else:
+                    print(f"[Info COL] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
             if not self.is_cancelled:
-                print(f"[Info COL] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
                 # 검증 완료 후 파일 캐시 삭제
                 self.after(0, lambda: self._clear_file_cache("col"))
-            else:
-                print(f"[Info COL] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
         except Exception as e:
-            print(f"[Error _perform_col_verification] Error during batch verification: {e}")
+            print(f"[Error _perform_col_verification] Error during verification: {e}")
             import traceback
             traceback.print_exc()
             self.after(0, lambda: self.show_centered_message("error", "COL 검증 오류", f"COL 검증 중 오류 발생: {e}"))
         finally:
-            # 작업 완료/취소 상태 처리
-            if self.is_cancelled:
-                self.after(0, lambda: self._update_progress_label("검증 취소됨"))
-            else:
-                self.after(0, lambda: self._update_progress_label("검증 완료"))
-            
-            # 최종 진행률 및 상태 레이블 업데이트
-            self.after(10, lambda: self.update_progress(1.0))
-            
-            # 프로그레스바 정지
-            if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'progressbar'):
-                self.after(50, lambda: self.status_bar.progressbar.stop())
-                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate'))
-
-            # UI 상태 복원 및 is_verifying 플래그 해제
-            self.after(100, lambda: self._set_ui_state("normal"))
-            self.after(110, lambda: setattr(self, 'is_verifying', False))
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
             
             # 입력 필드 초기화 및 포커스
             if hasattr(self, 'col_tab') and hasattr(self.col_tab, 'entry'):
@@ -898,7 +948,6 @@ class SpeciesVerifierApp(ctk.CTk):
         if not item_id or region != "cell":
             return
             
-        # 컬럼 인덱스 계산 (0부터 시작)
         column_idx = int(column.replace("#", "")) - 1
         values = tree.item(item_id, "values")
         
@@ -907,16 +956,12 @@ class SpeciesVerifierApp(ctk.CTk):
             
         value = values[column_idx]
         
-        # 컬럼별 동작 정의
+        # 컬럼별 동작 정의 (심층분석 결과 컬럼 제거됨)
         if column_idx == 4:  # WoRMS 링크
             if value and value != "-":
                 # 웹 브라우저로 링크 열기
                 import webbrowser
                 webbrowser.open(value)
-        elif column_idx == 5:  # 위키 정보
-            if value and value != "-":
-                # 위키 정보 팝업 표시
-                self._show_wiki_summary_popup(tree.item(item_id, "text"), values[5])
     
     def _on_marine_tree_right_click(self, event):
         """해양생물 결과 우클릭 이벤트 처리"""
@@ -939,8 +984,6 @@ class SpeciesVerifierApp(ctk.CTk):
                 tooltip_text = "더블 클릭 시 WoRMS ID 복사됨"
             elif column_id == "#5":  # WoRMS Link 컬럼 헤더
                 tooltip_text = "더블 클릭 시 WoRMS 웹사이트 확인"
-            elif column_id == "#6":  # Wiki Summary 컬럼 헤더
-                tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
         elif region == "cell":
@@ -982,15 +1025,11 @@ class SpeciesVerifierApp(ctk.CTk):
             
         value = values[column_idx]
         
-        # 컬럼별 동작 정의
+        # 컬럼별 동작 정의 (심층분석 결과 컬럼 제거됨)
         if column_idx == 4:  # LPSN 링크 (인덱스 4)
             if value and value != "-":
                 import webbrowser
                 webbrowser.open(value)
-        elif column_idx == 5:  # 위키 정보 (수정: 인덱스 5)
-            if value and value != "-":
-                # 위키 정보 팝업 표시
-                self._show_wiki_summary_popup(tree.item(item_id, "text"), values[5])
     
     def _on_microbe_tree_right_click(self, event):
         """미생물 결과 우클릭 이벤트 처리"""
@@ -1009,20 +1048,10 @@ class SpeciesVerifierApp(ctk.CTk):
         
         # 헤더 영역이고 특정 컬럼인 경우 툴팁 표시
         if region == "heading":
-            # --- 디버깅 로그 주석 처리 (사용자 요청) ---
-            # print(f"[Debug Tooltip] Hovering header region. Identified column_id: {column_id}")
-            
-            # --- 수정: 컬럼 ID와 툴팁 매핑 확인 및 조정 ---
-            # Treeview 컬럼 인덱스는 #0부터 시작하지만, identify_column은 #1부터 반환하는 경향이 있음.
-            # 실제 컬럼: #1(학명), #2(검증), #3(상태), #4(분류), #5(LPSN 링크), #6(위키)
-            # 따라서, 분류=#4, LPSN링크=#5, 위키=#6 으로 추정하고 조건문 수정
-            if column_id == "#4":  # 분류 컬럼 헤더 (기존 #3)
+            if column_id == "#4":  # 분류 컬럼 헤더
                 tooltip_text = "분류학적 위치 정보"
-            elif column_id == "#5":  # LPSN Link 컬럼 헤더 (기존 #4)
+            elif column_id == "#5":  # LPSN Link 컬럼 헤더
                 tooltip_text = "더블 클릭 시 LPSN 웹사이트 확인"
-            elif column_id == "#6":  # Wiki Summary 컬럼 헤더 (기존 #5)
-                tooltip_text = "더블 클릭 시 심층분석 결과 팝업창 확인"
-            # --- 수정 끝 ---
         
         # 셀 영역이고 특정 조건인 경우 값을 툴팁으로 표시
         elif region == "cell":
@@ -1062,6 +1091,12 @@ class SpeciesVerifierApp(ctk.CTk):
         # 다른 탭 변수 초기화
         self.microbe_total_items = 0
         self.col_total_items = 0
+        
+        # 새 검색 시작 시 기존 결과 지우기
+        print("[Debug] 새 검색 시작 - 해양생물 탭 기존 결과 지우기")
+        self.current_results_marine.clear()
+        if hasattr(self, 'result_tree_marine') and self.result_tree_marine:
+            self.result_tree_marine.clear()
         
         # 처리 방식에 따른 진행 UI 표시
         processing_type = "실시간" if use_realtime else "배치"
@@ -1223,6 +1258,12 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False):
         """미생물 검증 스레드 시작"""
+        # 새 검색 시작 시 기존 결과 지우기
+        print("[Debug] 새 검색 시작 - 미생물 탭 기존 결과 지우기")
+        self.current_results_microbe.clear()
+        if hasattr(self, 'result_tree_microbe') and self.result_tree_microbe:
+            self.result_tree_microbe.clear()
+        
         # 진행 UI 표시 (초기 메시지 개선)
         processing_type = "실시간" if use_realtime else "배치"
         initial_msg = f"미생물 {processing_type} 검증 준비 중..."
@@ -1266,110 +1307,131 @@ class SpeciesVerifierApp(ctk.CTk):
             self.total_verification_items = len(microbe_names_list)
             print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
             
-            # 배치 처리 설정
+            # 설정 로드
             from species_verifier.config import app_config, api_config
-            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
-            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
             
-            total_items = len(microbe_names_list)
-            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
-            
-            print(f"[Info Microbe] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
-            print(f"[Info Microbe] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
-            
-            # 결과 콜백 함수 정의
-            def result_callback_wrapper(result, *args):
+            # 실시간 처리 vs 배치 처리
+            if use_realtime:
+                # 실시간 처리 - 배치 지연 없이 빠르게 처리
+                print(f"[Info Microbe] 실시간 처리 시작: 총 {len(microbe_names_list)}개 항목")
+                
+                # 결과 콜백 함수 정의
+                def result_callback_wrapper(result, *args):
+                    if not self.is_cancelled:
+                        self.result_queue.put((result, 'microbe'))
+                        print(f"[Debug] 미생물 실시간 결과 추가: {result.get('input_name', '')}")
+                
+                # 실시간 처리 - 개별 항목 처리
+                from species_verifier.gui.bridge import perform_microbe_verification
+                batch_results = perform_microbe_verification(
+                    microbe_names_list,
+                    lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                        p, curr, len(microbe_names_list)
+                    )),
+                    lambda msg: self.after(0, lambda: self._update_progress_label(f"실시간: {msg}")),
+                    result_callback=result_callback_wrapper,
+                    context=context,
+                    check_cancelled=check_cancelled,
+                    realtime_mode=True  # 실시간 모드 플래그
+                )
+                
+                print(f"[Info Microbe] 실시간 처리 완료: {len(microbe_names_list)}개 항목")
+                
+            else:
+                # 배치 처리 - 기존 방식
+                BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+                BATCH_DELAY = api_config.BATCH_DELAY  # 3.0초
+                
+                total_items = len(microbe_names_list)
+                total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
+                
+                print(f"[Info Microbe] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+                print(f"[Info Microbe] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
+                
+                # 결과 콜백 함수 정의
+                def result_callback_wrapper(result, *args):
+                    if not self.is_cancelled:
+                        self.result_queue.put((result, 'microbe'))
+                        print(f"[Debug] 미생물 배치 결과 추가: {result.get('input_name', '')}")
+                    else:
+                        print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
+                
+                # 배치별 처리
+                processed_items = 0
+                for batch_idx in range(total_batches):
+                    # 취소 확인
+                    if self.is_cancelled:
+                        print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
+                        break
+                    
+                    # 현재 배치 생성
+                    start_idx = batch_idx * BATCH_SIZE
+                    end_idx = min(start_idx + BATCH_SIZE, total_items)
+                    current_batch = microbe_names_list[start_idx:end_idx]
+                    
+                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                    
+                    # 배치 진행률 업데이트
+                    batch_progress = batch_idx / total_batches
+                    self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                    self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                    
+                    # 현재 배치 처리
+                    try:
+                        from species_verifier.gui.bridge import perform_microbe_verification
+                        batch_results = perform_microbe_verification(
+                            current_batch,
+                            lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                                batch_progress + (p / total_batches), 
+                                processed_items + (curr or 0), 
+                                total_items
+                            )),
+                            lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
+                            result_callback=result_callback_wrapper,
+                            context=context,
+                            check_cancelled=check_cancelled
+                        )
+                        
+                        processed_items += len(current_batch)
+                        print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                        
+                    except Exception as e:
+                        print(f"[Error Microbe] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    # 마지막 배치가 아니면 배치간 지연 시간 적용
+                    if batch_idx < total_batches - 1 and not self.is_cancelled:
+                        print(f"[Info Microbe] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                        time.sleep(BATCH_DELAY)
+                    
+                    # 취소 확인 (지연 후)
+                    if self.is_cancelled:
+                        print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
+                        break
+                
                 if not self.is_cancelled:
-                    self.result_queue.put((result, 'microbe'))
-                    print(f"[Debug] 미생물 결과를 미생물 탭에 추가: {result.get('input_name', '')}")
+                    print(f"[Info Microbe] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
                 else:
-                    print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
-            
-            # 배치별 처리
-            processed_items = 0
-            for batch_idx in range(total_batches):
-                # 취소 확인
-                if self.is_cancelled:
-                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
-                    break
-                
-                # 현재 배치 생성
-                start_idx = batch_idx * BATCH_SIZE
-                end_idx = min(start_idx + BATCH_SIZE, total_items)
-                current_batch = microbe_names_list[start_idx:end_idx]
-                
-                print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
-                
-                # 배치 진행률 업데이트
-                batch_progress = batch_idx / total_batches
-                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
-                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
-                
-                # 현재 배치 처리
-                try:
-                    from species_verifier.gui.bridge import perform_microbe_verification
-                    batch_results = perform_microbe_verification(
-                        current_batch,
-                        lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
-                            batch_progress + (p / total_batches), 
-                            processed_items + (curr or 0), 
-                            total_items
-                        )),
-                        lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
-                        result_callback=result_callback_wrapper,
-                        context=context,
-                        check_cancelled=check_cancelled
-                    )
-                    
-                    processed_items += len(current_batch)
-                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
-                    
-                except Exception as e:
-                    print(f"[Error Microbe] 배치 {batch_idx + 1} 처리 중 오류: {e}")
-                    import traceback
-                    traceback.print_exc()
-                
-                # 마지막 배치가 아니면 배치간 지연 시간 적용
-                if batch_idx < total_batches - 1 and not self.is_cancelled:
-                    print(f"[Info Microbe] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
-                    time.sleep(BATCH_DELAY)
-                
-                # 취소 확인 (지연 후)
-                if self.is_cancelled:
-                    print(f"[Info Microbe] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
-                    break
+                    print(f"[Info Microbe] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
             if not self.is_cancelled:
-                print(f"[Info Microbe] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
                 # 검증 완료 후 파일 캐시 삭제
                 self.after(0, lambda: self._clear_file_cache("microbe"))
-            else:
-                print(f"[Info Microbe] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
         except Exception as e:
-            print(f"[Error _perform_microbe_verification] Error during batch verification: {e}")
+            print(f"[Error _perform_microbe_verification] Error during verification: {e}")
             import traceback
             traceback.print_exc()
 
         finally:
-            # 최종 진행률 및 상태 레이블 업데이트
-            self.after(0, lambda: self.update_progress(1.0))
-            self.after(10, lambda: self._update_progress_label("검증 완료"))
-
-            # 프로그레스바 정지
-            if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'progressbar'):
-                self.after(50, lambda: self.status_bar.progressbar.stop())
-                self.after(50, lambda: self.status_bar.progressbar.configure(mode='determinate'))
-
-            # UI 상태를 'normal'로 설정하여 상태바/버튼 정리
-            self.after(100, lambda: self._set_ui_state("normal"))
-            self.after(20, lambda: setattr(self, 'is_verifying', False))
-
-            # 입력창 초기화 및 포커스 설정
-            if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'entry'):
-                self.after(600, lambda: self.microbe_tab.entry.delete("1.0", tk.END))
-            if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'focus_entry'):
-                 self.after(650, self.microbe_tab.focus_entry)
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
+            # 완료 후 포커스 설정은 유지
+            if hasattr(self, 'microbe_tab'):
+                self.after(0, lambda: self.microbe_tab.focus_entry())
 
     def _process_file(self, file_path: str, tab_name: str = "marine"):
         """파일 처리 (모든 탭 통합)
@@ -1554,37 +1616,27 @@ class SpeciesVerifierApp(ctk.CTk):
         self.status_bar.set_status(text)
     
     def update_progress(self, progress_value: float, current_item: int = None, total_items: int = None):
-        """진행 상황 업데이트 - 현재 탭에 따라 적절한 진행 상태 표시"""
-        # 취소 상태인 경우 진행률 업데이트 무시
-        if hasattr(self, 'is_cancelled') and self.is_cancelled:
-            print(f"[Debug Progress] 취소 상태에서 진행률 업데이트 요청 무시")
+        """진행률 업데이트 (메인 스레드에서 호출)"""
+        try:
+            # 진행률 바 업데이트
             if hasattr(self, 'status_bar'):
-                self.status_bar.set_progress(0, 0, 1)
-            return
+                self.status_bar.set_progress(progress_value)
             
-        print(f"[Debug Progress] 진행률: {progress_value}, 현재 항목: {current_item}, 전체 항목 수: {total_items}")
-        
-        # 전체 항목 수 결정
-        actual_total_items = total_items
-        
-        # 전체 항목 수가 직접 전달된 경우 우선 사용
-        if total_items is not None and total_items > 0:
-            actual_total_items = total_items
-        # 파일에서 추출한 항목 수 사용
-        elif hasattr(self, 'current_file_item_count') and self.current_file_item_count is not None and self.current_file_item_count > 0:
-            actual_total_items = self.current_file_item_count
-        # 전체 항목 수 사용
-        elif hasattr(self, 'total_verification_items') and self.total_verification_items is not None:
-            actual_total_items = self.total_verification_items
-        
-        # 현재 항목 번호 결정
-        actual_current_item = current_item
-        if actual_current_item is None and actual_total_items is not None:
-            actual_current_item = max(1, min(int(progress_value * actual_total_items), actual_total_items))
-        
-        # 진행률 업데이트
-        if hasattr(self, 'status_bar'):
-            self.status_bar.set_progress(progress_value, actual_current_item, actual_total_items)
+            # 진행률 텍스트 업데이트 (개선된 표시)
+            if current_item is not None and total_items is not None:
+                # 실제 처리된 개수와 전체 개수를 정확히 표시
+                progress_text = f"진행률: {current_item}/{total_items} ({progress_value*100:.1f}%)"
+                print(f"[Debug Progress] 진행률 업데이트: {progress_text}")
+                self._update_progress_label(progress_text)
+            else:
+                # 백분율만 표시
+                progress_text = f"진행률: {progress_value*100:.1f}%"
+                self._update_progress_label(progress_text)
+                
+        except Exception as e:
+            print(f"[Error] Progress update error: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _show_progress_ui(self, initial_text: str = "", reset_file_label: bool = False):
         """진행 UI 표시"""
@@ -1604,13 +1656,14 @@ class SpeciesVerifierApp(ctk.CTk):
             if hasattr(self, 'microbe_tab'):
                 self.microbe_tab.set_selected_file(None)
         
-        # 검증 진행 중에도 탭 색상 유지
-        self.after(20, self._reapply_tab_colors)
+
     
     def _set_ui_state(self, state: str):
-        """UI 상태 설정"""
+        """UI 상태 설정 - 탭 색상 보존 강화"""
         enable_state = tk.NORMAL if state in ["idle", "normal"] else tk.DISABLED
         is_idle = state in ["idle", "normal"]
+        
+        print(f"[Debug UI State] UI 상태 변경: {state} (enable_state: {enable_state}, is_idle: {is_idle})")
 
         # --- UI 요소 상태 일괄 업데이트 ---
         # 해양생물 탭
@@ -1625,11 +1678,39 @@ class SpeciesVerifierApp(ctk.CTk):
             if is_idle:
                  self.microbe_tab._update_verify_button_state()
 
-        # 탭 뷰 자체
+        # COL 탭
+        if hasattr(self, 'col_tab'):
+            if hasattr(self.col_tab, 'set_input_state'):
+                self.col_tab.set_input_state(enable_state)
+            if is_idle and hasattr(self.col_tab, '_update_verify_button_state'):
+                self.col_tab._update_verify_button_state()
+
+        # 탭 뷰 자체 - 색상 보존을 위해 탭뷰는 비활성화하지 않음
         if hasattr(self, 'tab_view'):
-            self.tab_view.configure(state=enable_state)
-            # 탭 상태 변경 후 색상 다시 적용 (검증 시작/완료 시 색상 초기화 방지)
-            self.after(10, self._reapply_tab_colors)
+            current_tab = self.tab_view.get()
+            print(f"[Debug UI State] 현재 탭: '{current_tab}' - 탭뷰 상태는 건드리지 않음")
+            
+            # 검증 중일 때만 탭 전환 방지 (색상은 유지)
+            if not is_idle:
+                print(f"[Debug UI State] 검증 중 - 탭 전환 비활성화")
+                # 탭 전환을 막기 위해 segmented_button만 비활성화
+                if hasattr(self.tab_view, '_segmented_button'):
+                    self.tab_view._segmented_button.configure(state=tk.DISABLED)
+                    print(f"[Debug UI State] segmented_button 비활성화 완료")
+                
+
+            else:
+                print(f"[Debug UI State] 유휴 상태 - 탭 전환 활성화")
+                # 유휴 상태에서는 탭 전환 활성화
+                if hasattr(self.tab_view, '_segmented_button'):
+                    self.tab_view._segmented_button.configure(state=tk.NORMAL)
+                    print(f"[Debug UI State] segmented_button 활성화 완료")
+                
+
+                
+                # 색상 복원 (유휴 상태에서만)
+                self.after(5, self._reapply_tab_colors)
+                print(f"[Debug UI State] 탭 색상 복원 스케줄링 완료")
 
         # --- 상태 바 업데이트 ---
         if is_idle:
@@ -1823,105 +1904,12 @@ class SpeciesVerifierApp(ctk.CTk):
         tooltip_label.pack()
 
     def _hide_tooltip(self):
-        """툴팁 팝업을 숨깁니다."""
+        """툴팁 숨기기"""
         if hasattr(self, 'tooltip_window') and self.tooltip_window:
             self.tooltip_window.destroy()
             self.tooltip_window = None
-            
-    def _show_wiki_summary_popup(self, title: str, wiki_summary: str):
-        """심층분석 결과 내용을 팝업 창으로 표시합니다."""
-        import webbrowser
-        
-        popup = ctk.CTkToplevel(self)
-        popup.title(f"종정보: {title}")
-        popup.geometry("800x600")
-        popup.grab_set()  # 모달 창으로 설정
-        
-        # 레이아웃 설정
-        popup.grid_columnconfigure(0, weight=1)
-        popup.grid_rowconfigure(0, weight=0)  # 제목
-        popup.grid_rowconfigure(1, weight=1)  # 내용
-        popup.grid_rowconfigure(2, weight=0)  # 하단 프레임 (버튼, 출처)
-        
-        # 제목 레이블
-        title_label = ctk.CTkLabel(
-            popup, 
-            text=f"{title}", 
-            font=ctk.CTkFont(family="Malgun Gothic", size=16, weight="bold")
-        )
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        
-        # 내용 프레임 (스크롤 가능)
-        content_frame = ctk.CTkFrame(popup)
-        content_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
-        content_frame.grid_columnconfigure(0, weight=1)
-        content_frame.grid_rowconfigure(0, weight=1)
-        
-        # 텍스트 위젯 (스크롤 가능)
-        text_widget = ctk.CTkTextbox(
-            content_frame, 
-            wrap="word", 
-            font=ctk.CTkFont(family="Malgun Gothic", size=14),
-            corner_radius=6,
-            padx=15, pady=15
-        )
-        text_widget.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
-        
-        # 텍스트 삽입
-        formatted_text = wiki_summary.replace('\n\n', '\n \n')  # 빈 줄 유지
-        text_widget.insert("1.0", formatted_text)
-        text_widget.configure(state="disabled")  # 읽기 전용으로 설정
-        
-        # 하단 프레임 (버튼, 출처용)
-        bottom_frame = ctk.CTkFrame(popup)
-        bottom_frame.grid(row=2, column=0, padx=20, pady=(10, 20), sticky="ew")
-        bottom_frame.grid_columnconfigure(0, weight=1)  # 출처 레이블 공간
-        bottom_frame.grid_columnconfigure(1, weight=0)  # 위키 링크 버튼 공간
-        bottom_frame.grid_columnconfigure(2, weight=0)  # 복사 버튼 공간
-        bottom_frame.grid_columnconfigure(3, weight=0)  # 닫기 버튼 공간
 
-        # 출처 레이블
-        source_label = ctk.CTkLabel(
-            bottom_frame, 
-            text="자료 출처: 위키백과", 
-            font=ctk.CTkFont(family="Malgun Gothic", size=10, slant="italic"), 
-            text_color=("gray60", "gray50")
-        )
-        source_label.grid(row=0, column=0, padx=(0, 10), sticky="w")
-        
-        # 위키피디아 링크 버튼
-        wiki_url = f"https://ko.wikipedia.org/wiki/{title}"
-        if wiki_summary.startswith('[영문]'):
-            wiki_url = f"https://en.wikipedia.org/wiki/{title}"
-        
-        wiki_link_button = ctk.CTkButton(
-            bottom_frame, 
-            text="위키백과 원문", 
-            width=120, 
-            font=ctk.CTkFont(family="Malgun Gothic", size=12),
-            command=lambda: webbrowser.open(wiki_url)
-        )
-        wiki_link_button.grid(row=0, column=1, padx=(0, 10))
-        
-        # 내용 복사 버튼
-        copy_button = ctk.CTkButton(
-            bottom_frame, 
-            text="내용 복사", 
-            width=100, 
-            font=ctk.CTkFont(family="Malgun Gothic", size=12), 
-            command=lambda: self._copy_to_clipboard(wiki_summary)
-        ) 
-        copy_button.grid(row=0, column=2, padx=(0, 10))
 
-        # 닫기 버튼
-        close_button = ctk.CTkButton(
-            bottom_frame, 
-            text="닫기", 
-            command=popup.destroy, 
-            width=100, 
-            font=ctk.CTkFont(family="Malgun Gothic", size=12)
-        )
-        close_button.grid(row=0, column=3)
         
     def _copy_to_clipboard(self, text: str):
         """텍스트를 클립보드에 복사합니다."""
@@ -2196,11 +2184,53 @@ class SpeciesVerifierApp(ctk.CTk):
             
             df.to_excel(file_path, index=False)
             print(f"[Debug Export] Excel 저장 완료: {file_path}")
-            self.show_centered_message("info", "저장 완료", f"결과가 성공적으로 저장되었습니다.\n 경로: {file_path}")
+            
+            # 저장 완료 후 사용자에게 결과 지우기 여부 확인
+            from tkinter import messagebox
+            clear_results = messagebox.askyesno(
+                "저장 완료", 
+                f"결과가 성공적으로 저장되었습니다.\n경로: {file_path}\n\n검증 결과를 지우시겠습니까?",
+                icon="question"
+            )
+            
+            if clear_results:
+                # 현재 탭의 결과 지우기
+                self._clear_current_tab_results(tree_type)
+                print(f"[Debug Export] {tree_type} 탭 결과 지우기 완료")
+            else:
+                print(f"[Debug Export] 사용자가 결과 지우기를 취소함")
+                
         except Exception as e:
             print(f"[Error Export] Excel 저장 오류: {e}")
             print(traceback.format_exc())
             self.show_centered_message("error", "저장 실패", f"결과를 저장하는 중 오류가 발생했습니다.\n 오류: {e}")
+
+    def _clear_current_tab_results(self, tree_type: str):
+        """현재 탭의 검증 결과를 지웁니다."""
+        try:
+            if tree_type == "marine":
+                self.current_results_marine.clear()
+                if hasattr(self, 'result_tree_marine') and self.result_tree_marine:
+                    self.result_tree_marine.clear()
+                print("[Debug Clear] 해양생물 탭 결과 지우기 완료")
+            elif tree_type == "microbe":
+                self.current_results_microbe.clear()
+                if hasattr(self, 'result_tree_microbe') and self.result_tree_microbe:
+                    self.result_tree_microbe.clear()
+                print("[Debug Clear] 미생물 탭 결과 지우기 완료")
+            elif tree_type == "col":
+                self.current_results_col.clear()
+                if hasattr(self, 'result_tree_col') and self.result_tree_col:
+                    self.result_tree_col.clear()
+                print("[Debug Clear] COL 탭 결과 지우기 완료")
+            
+            # 상태바 업데이트 (저장 버튼 숨기기)
+            if hasattr(self, 'status_bar'):
+                self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+                
+        except Exception as e:
+            print(f"[Error Clear] 결과 지우기 중 오류: {e}")
+            self.show_centered_message("error", "지우기 실패", f"결과를 지우는 중 오류가 발생했습니다: {e}")
 
     def _reset_status_ui(self):
         """UI 상태를 초기화하고 기본 상태로 되돌립니다."""
@@ -2227,15 +2257,14 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), ("mapped_name", "학명"), ("is_verified", "검증"),
                 ("worms_status", "WoRMS 상태"), ("worms_id", "WoRMS ID"), 
-                ("worms_link", "WoRMS URL"), ("wiki_summary", "심층분석 결과")
+                ("worms_link", "WoRMS URL")
             ]
         elif tree_type == 'microbe':
             tree = self.result_tree_microbe.tree
             headers = ["입력명"] + [tree.heading(f"#{i}")['text'] for i in range(1, len(tree['columns']) + 1)]
             columns_info = [
                 ("input_name", "입력명"), ("valid_name", "유효 학명"), ("is_verified", "검증"),
-                ("status", "상태"), ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크"),
-                ("wiki_summary", "심층분석 결과")
+                ("status", "상태"), ("taxonomy", "분류"), ("lpsn_link", "LPSN 링크")
             ]
         elif tree_type == 'col':
             tree = self.result_tree_col.tree
@@ -2243,7 +2272,7 @@ class SpeciesVerifierApp(ctk.CTk):
             columns_info = [
                 ("input_name", "입력명"), ("valid_name", "학명"), ("is_verified", "검증"), 
                 ("status", "COL 상태"), ("col_id", "COL ID"), 
-                ("col_url", "COL URL"), ("wiki_summary", "심층분석 결과")
+                ("col_url", "COL URL")
             ]
         else:
             print(f"[Error] Unknown tree_type for copy: {tree_type}")
@@ -2258,13 +2287,8 @@ class SpeciesVerifierApp(ctk.CTk):
                 value = values[i] if i < len(values) else ""
                 col_key = columns_info[i][0] # 현재 컬럼의 키 가져오기
 
-                # 위키 요약 축약 및 링크 N/A 처리 (모든 탭에 공통 적용)
-                if col_key == "wiki_summary" and len(str(value)) > 100: 
-                     # 전체 데이터 가져오기 시도
-                     full_result = self._get_result_data_from_item_id(tree_type, item_id)
-                     full_summary = full_result.get('wiki_summary', '') if full_result else ''
-                     value = full_summary if full_summary else str(value)[:100] + "..." # 전체 없으면 축약
-                elif col_key in ["worms_link", "lpsn_link", "col_url"] and (not value or value == '-'):
+                # 링크 N/A 처리 (모든 탭에 공통 적용)
+                if col_key in ["worms_link", "lpsn_link", "col_url"] and (not value or value == '-'):
                      value = "N/A" 
                 
                 info_lines.append(f"{header}: {value}")
@@ -2345,88 +2369,121 @@ class SpeciesVerifierApp(ctk.CTk):
             self.status_bar.set_ready(status_text=status_text, show_save_button=results_exist)
 
     def _reapply_tab_colors(self):
-        """탭 색상을 다시 적용하는 메서드 (공통 색상 사용)"""
+        """탭 색상을 간단하게 공통 적용하는 메서드"""
         try:
+            current_tab = self.tab_view.get()
+            print(f"[Debug Color] 간단 탭 색상 적용 - 현재 탭: '{current_tab}'")
+            
             # 탭 폰트 설정
             tab_font = ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold")
             
-            # 탭뷰 전체 색상 설정 (강제 업데이트)
-            self._apply_tab_colors_to_segmented_button(tab_font)
+            # segmented_button 전체 색상 설정
+            segmented_button = self.tab_view._segmented_button
+            segmented_button.configure(
+                font=tab_font,
+                height=45,
+                corner_radius=6,
+                border_width=0,
+                selected_color=self.TAB_COLORS['selected_color'],
+                selected_hover_color=self.TAB_COLORS['selected_hover_color'],
+                unselected_color=self.TAB_COLORS['unselected_color'],
+                unselected_hover_color=self.TAB_COLORS['unselected_hover_color'],
+                text_color=("#ffffff", "#ffffff")  # 항상 흰색으로 고정
+            )
             
-            # 개별 탭 버튼 색상 설정 (강제 업데이트)
-            self._apply_tab_colors_to_individual_buttons(tab_font)
-            
-            # 강제로 탭뷰 업데이트
-            self.tab_view.update_idletasks()
-            
-            print("[Debug] 탭 색상 다시 적용 완료")
-        except Exception as e:
-            print(f"[Error] 탭 색상 재적용 중 오류: {e}")
-
-    def _apply_tab_colors_to_segmented_button(self, tab_font):
-        """segmented_button에 공통 탭 색상 적용"""
-        self.tab_view._segmented_button.configure(
-            font=tab_font,
-            height=45,  # 탭 높이 증가
-            corner_radius=6,  # 둥근 모서리 줄임
-            border_width=0,  # 테두리 제거
-            selected_color=self.TAB_COLORS['selected_color'],  # 활성 탭 색상
-            selected_hover_color=self.TAB_COLORS['selected_hover_color'],  # 활성 탭 호버
-            unselected_color=self.TAB_COLORS['unselected_color'],  # 비활성 탭 배경
-            unselected_hover_color=self.TAB_COLORS['unselected_hover_color'],  # 비활성 탭 호버
-            text_color=self.TAB_COLORS['text_color'],  # 활성 탭 텍스트 색상
-            text_color_disabled=self.TAB_COLORS['text_color_disabled'],  # 비활성 탭 텍스트 색상
-        )
-
-    def _apply_tab_colors_to_individual_buttons(self, tab_font):
-        """개별 탭 버튼에 공통 탭 색상 적용 (강제 업데이트)"""
-        try:
-            current_tab = self.tab_view.get()  # 현재 활성 탭 이름
-            
-            for tab_name, button in self.tab_view._segmented_button._buttons_dict.items():
+            # 개별 버튼 색상 강제 설정
+            buttons_dict = segmented_button._buttons_dict
+            for tab_name, button in buttons_dict.items():
                 is_selected = (tab_name == current_tab)
                 
-                # 기본 속성 설정
-                button.configure(
-                    font=tab_font,
-                    height=45,
-                    corner_radius=6,
-                    border_width=0
-                )
-                
-                # 활성/비활성 상태에 따른 색상 설정
                 if is_selected:
-                    # 활성 탭 색상 강제 적용
-                    button.configure(
-                        fg_color=self.TAB_COLORS['selected_color'],
-                        hover_color=self.TAB_COLORS['selected_hover_color'],
-                        text_color=self.TAB_COLORS['text_color']
-                    )
-                else:
-                    # 비활성 탭 색상 강제 적용
-                    button.configure(
-                        fg_color=self.TAB_COLORS['unselected_color'],
-                        hover_color=self.TAB_COLORS['unselected_hover_color'],
-                        text_color=self.TAB_COLORS['text_color_disabled']
-                    )
-                
-                # 버튼 업데이트 강제 실행
-                button.update_idletasks()
-                
-        except Exception as e:
-            print(f"[Error] 개별 탭 버튼 색상 적용 중 오류: {e}")
-            # 기본 방법으로 폴백
-            for button in self.tab_view._segmented_button._buttons_dict.values():
-                try:
+                    # 활성 탭: 파란색 배경 + 흰색 텍스트 (고정)
                     button.configure(
                         font=tab_font,
                         height=45,
                         corner_radius=6,
                         border_width=0,
-                        text_color=self.TAB_COLORS['text_color']
+                        fg_color=self.TAB_COLORS['selected_color'],
+                        hover_color=self.TAB_COLORS['selected_hover_color'],
+                        text_color=("#ffffff", "#ffffff")  # 흰색 고정
                     )
-                except:
-                    pass
+                else:
+                    # 비활성 탭: 회색 배경 + 회색 텍스트
+                    button.configure(
+                        font=tab_font,
+                        height=45,
+                        corner_radius=6,
+                        border_width=0,
+                        fg_color=self.TAB_COLORS['unselected_color'],
+                        hover_color=self.TAB_COLORS['unselected_hover_color'],
+                        text_color=self.TAB_COLORS['text_color_disabled']
+                    )
+                
+                button.update_idletasks()
+            
+            print(f"[Debug Color] 간단 탭 색상 적용 완료")
+            
+        except Exception as e:
+            print(f"[Error Color] 간단 탭 색상 적용 실패: {e}")
+
+    def _apply_tab_colors_to_segmented_button(self, tab_font):
+        """segmented_button 색상 적용 - 간단 버전"""
+        try:
+            segmented_button = self.tab_view._segmented_button
+            segmented_button.configure(
+                font=tab_font,
+                height=45,
+                corner_radius=6,
+                border_width=0,
+                selected_color=self.TAB_COLORS['selected_color'],
+                selected_hover_color=self.TAB_COLORS['selected_hover_color'],
+                unselected_color=self.TAB_COLORS['unselected_color'],
+                unselected_hover_color=self.TAB_COLORS['unselected_hover_color'],
+                text_color=("#ffffff", "#ffffff")  # 항상 흰색으로 고정
+            )
+            print(f"[Debug Color] segmented_button 간단 색상 적용 완료")
+            
+        except Exception as e:
+            print(f"[Error Color] segmented_button 간단 색상 적용 실패: {e}")
+
+    def _apply_tab_colors_to_individual_buttons(self, tab_font):
+        """개별 탭 버튼 색상 적용 - 간단 버전"""
+        try:
+            current_tab = self.tab_view.get()
+            buttons_dict = self.tab_view._segmented_button._buttons_dict
+            
+            for tab_name, button in buttons_dict.items():
+                is_selected = (tab_name == current_tab)
+                
+                if is_selected:
+                    # 활성 탭: 파란색 배경 + 흰색 텍스트 (고정)
+                    button.configure(
+                        font=tab_font,
+                        height=45,
+                        corner_radius=6,
+                        border_width=0,
+                        fg_color=self.TAB_COLORS['selected_color'],
+                        hover_color=self.TAB_COLORS['selected_hover_color'],
+                        text_color=("#ffffff", "#ffffff")  # 흰색 고정
+                    )
+                else:
+                    # 비활성 탭: 회색 배경 + 회색 텍스트
+                    button.configure(
+                        font=tab_font,
+                        height=45,
+                        corner_radius=6,
+                        border_width=0,
+                        fg_color=self.TAB_COLORS['unselected_color'],
+                        hover_color=self.TAB_COLORS['unselected_hover_color'],
+                        text_color=self.TAB_COLORS['text_color_disabled']
+                    )
+                
+                button.update_idletasks()
+            
+            print(f"[Debug Color] 개별 버튼 간단 색상 적용 완료")
+            
+        except Exception as e:
+            print(f"[Error Color] 개별 버튼 간단 색상 적용 실패: {e}")
 
     # --- COL 탭 트리뷰 이벤트 핸들러 추가 ---
     def _on_col_tree_double_click(self, event):
@@ -2482,30 +2539,23 @@ class SpeciesVerifierApp(ctk.CTk):
         elif tree_type == 'microbe':
             self._on_microbe_tree_double_click(event)
         elif tree_type == 'col':
-            # COL 탭의 더블 클릭 로직 (URL 및 위키 팝업)
+            # COL 탭의 더블 클릭 로직 (URL만 처리)
             tree = self.result_tree_col.tree
             region = tree.identify_region(event.x, event.y)
             column = tree.identify_column(event.x)
-            item_id = tree.identify("item", event.x, event.y) # 수정: 백슬래시 제거
+            item_id = tree.identify("item", event.x, event.y)
             
             if not item_id or region != "cell": return
-            column_idx = int(column.replace("#", "")) - 1 # 수정: 백슬래시 제거
-            values = tree.item(item_id, "values") # 수정: 백슬래시 제거
+            column_idx = int(column.replace("#", "")) - 1
+            values = tree.item(item_id, "values")
             if column_idx >= len(values): return
             value = values[column_idx]
 
             if column_idx == 4:  # COL URL (인덱스 4)
-                if value and value != "-": # 수정: 백슬래시 제거
+                if value and value != "-":
                     import webbrowser
                     webbrowser.open(value)
-            elif column_idx == 5:  # 위키 정보 (인덱스 5)
-                 if value and value != "-": # 수정: 백슬래시 제거
-                     selected_result = self._get_result_data_from_item_id('col', item_id)
-                     if selected_result and selected_result.get('wiki_summary'):
-                         self._show_wiki_summary_popup(tree.item(item_id, "text"), selected_result['wiki_summary']) # 수정: 백슬래시 제거
-                     elif value:
-                          self._show_wiki_summary_popup(tree.item(item_id, "text"), value) # 수정: 백슬래시 제거
-            
+
     def _on_result_motion(self, event, tree_type: str):
         """결과 트리뷰 마우스 이동 공통 처리 (툴팁 등)"""
         # 타입별 실제 모션 핸들러 호출
@@ -2518,8 +2568,7 @@ class SpeciesVerifierApp(ctk.CTk):
             tree = self.result_tree_col.tree
             header_tooltips = {
                 "#4": "더블 클릭 시 COL ID 복사됨", 
-                "#5": "더블 클릭 시 COL 웹사이트 확인", 
-                "#6": "더블 클릭 시 심층분석 결과 팝업창 확인" 
+                "#5": "더블 클릭 시 COL 웹사이트 확인"
             }
             x, y = event.x, event.y
             region = tree.identify_region(x, y)

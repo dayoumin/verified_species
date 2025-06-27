@@ -51,7 +51,8 @@ def perform_verification(
     update_progress: Callable[[float, Optional[int], Optional[int]], None] = None,
     update_status: Callable[[str], None] = None,
     result_callback: Callable[[Dict[str, Any]], None] = None,
-    check_cancelled: Callable[[], bool] = None
+    check_cancelled: Callable[[], bool] = None,
+    realtime_mode: bool = False
 ) -> List[Dict[str, Any]]:
     """
     검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원)
@@ -85,6 +86,24 @@ def perform_verification(
             adapted_msv_callback = lambda r_dict, t="marine": result_callback(r_dict, t)
 
         try:
+            # 실시간 모드에 따른 설정
+            if realtime_mode:
+                print(f"[Bridge] 실시간 모드: {len(verification_list_input)}개 항목 빠르게 처리")
+                # 실시간 모드에서는 API 지연 시간을 최소화
+                from species_verifier.config import api_config
+                api_delay = api_config.REALTIME_REQUEST_DELAY  # 0.5초
+            else:
+                print(f"[Bridge] 배치 모드: {len(verification_list_input)}개 항목 안정적으로 처리")
+                # 배치 모드에서는 기본 지연 시간 사용
+                from species_verifier.config import api_config
+                api_delay = api_config.REQUEST_DELAY  # 1.0초
+            
+            # API 지연 시간 적용
+            import species_verifier.core.worms_api as worms_api
+            original_delay = worms_api.API_DELAY
+            worms_api.API_DELAY = api_delay
+            print(f"[Debug Bridge] API 지연 시간 설정: {original_delay}초 -> {api_delay}초")
+            
             # 수정: Verifier 인스턴스 생성 및 어댑터 콜백 전달
             verifier = MarineSpeciesVerifier(
                 progress_callback=update_progress, 
@@ -99,17 +118,9 @@ def perform_verification(
             if verification_list_input and len(verification_list_input) > 0:
                 print(f"[Debug Bridge] 검증할 해양생물 학명 샘플: {verification_list_input[:min(5, len(verification_list_input))]}")
             
-            # 모든 항목을 일괄 처리하도록 수정
-            print(f"[Info Bridge] 전체 {len(verification_list_input)}개 항목 검증을 일괄 처리합니다")
-            
-            # 10개 제한 문제 디버깅: 입력 목록의 전체 길이를 재확인
-            print(f"[Debug Bridge] 검증 직전 확인 - 입력 목록 길이: {len(verification_list_input)}")
-            
-            # API 지연 시간 조정 시도 (필요한 경우)
-            if len(verification_list_input) > 20:
-                print(f"[Debug Bridge] 많은 항목({len(verification_list_input)}개)이 감지되어 API 지연 시간을 0.2초로 조정합니다")
-                import species_verifier.core.worms_api as worms_api
-                worms_api.API_DELAY = 0.2
+            # 처리 방식 로그
+            processing_type = "실시간" if realtime_mode else "배치"
+            print(f"[Info Bridge] 전체 {len(verification_list_input)}개 항목 {processing_type} 검증을 일괄 처리합니다")
             
             try:
                 # 모든 항목을 한 번에 검증
@@ -120,9 +131,10 @@ def perform_verification(
                 if update_progress:
                     update_progress(1.0, len(verification_list_input), len(verification_list_input))
                 
-                # 상태 메시지 업데이트
-                if update_status:
-                    update_status(f"해양생물 검증 완료: 전체 {len(verification_list_input)}개 항목 처리됨")
+                                    # 상태 메시지 업데이트
+                    processing_type = "실시간" if realtime_mode else "배치"
+                    if update_status:
+                        update_status(f"해양생물 {processing_type} 검증 완료: 전체 {len(verification_list_input)}개 항목 처리됨")
                     
             except Exception as batch_e:
                 print(f"[Error Bridge] 일괄 검증 중 오류 발생: {batch_e}")
@@ -146,7 +158,8 @@ def perform_verification(
                     # 상태 메시지 업데이트
                     if update_status:
                         item_name = item[0] if isinstance(item, tuple) else item
-                        update_status(f"해양생물 검증 중: {item_name} ({i+1}/{len(verification_list_input)}) - 전체 {len(verification_list_input)}개 중 {i+1}번째")
+                        processing_type = "실시간" if realtime_mode else "배치"
+                        update_status(f"해양생물 {processing_type} 검증 중: {item_name} ({i+1}/{len(verification_list_input)})")
                     
                     # 단일 항목 검증 실행
                     try:
@@ -158,6 +171,13 @@ def perform_verification(
                             results.extend(single_result)
                     except Exception as item_e:
                         print(f"[Error Bridge] 항목 '{item}' 검증 중 오류: {item_e}")
+            
+            # API 지연 시간 복원
+            try:
+                worms_api.API_DELAY = original_delay
+                print(f"[Debug Bridge] API 지연 시간 복원: {api_delay}초 -> {original_delay}초")
+            except:
+                pass
             
             # 결과 확인
             print(f"[Debug Bridge] 검증 결과 수: {len(results) if results else 0}")
@@ -202,7 +222,8 @@ def perform_microbe_verification(
     update_status: Callable[[str], None] = None,
     result_callback: Callable[[Dict[str, Any]], None] = None,
     context: Union[List[str], str, None] = None,
-    check_cancelled: Callable[[], bool] = None
+    check_cancelled: Callable[[], bool] = None,
+    realtime_mode: bool = False
 ) -> List[Dict[str, Any]]:
     """
     미생물 검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원)
@@ -260,9 +281,12 @@ def perform_microbe_verification(
             # 취소 시 빠르게 처리하기 위해 배치 처리 방식 도입
             # 취소되지 않은 경우 모든 항목을 한 번에 처리
             try:
+                # 실시간 모드에 따른 설정
+                processing_type = "실시간" if realtime_mode else "배치"
+                
                 # 상태 메시지 업데이트
                 if update_status:
-                    update_status(f"미생물 검증 중: 전체 {len(microbe_names_list)}개 항목 처리 중...")
+                    update_status(f"미생물 {processing_type} 검증 중: 전체 {len(microbe_names_list)}개 항목 처리 중...")
                 
                 # 진행률 초기 업데이트 - MicrobeVerifier에서 관리하므로 여기서는 최소한만
                 if update_progress:

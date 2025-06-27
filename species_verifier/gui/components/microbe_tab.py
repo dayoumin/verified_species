@@ -344,9 +344,13 @@ class MicrobeTabFrame(BaseTabFrame):
         # 세부적인 활성화는 _update_verify_button_state에서 관리
         if self.verify_button:
             if state == tk.DISABLED:
-                self.verify_button.configure(state=tk.DISABLED, text_color=self.COMMON_COLORS['button_text'])
+                # 검증 중일 때: 버튼은 비활성화하고 텍스트 색상을 옅게 표시
+                self.verify_button.configure(
+                    state=tk.DISABLED, 
+                    text_color=self.COMMON_COLORS['button_text_verifying']
+                )
                 # 색상이 제대로 적용되도록 지연 후 재설정
-                self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
+                self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text_verifying']))
             else:
                 # normal 상태일 때는 _update_verify_button_state가 실제 상태 결정
                 self._update_verify_button_state()
