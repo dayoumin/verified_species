@@ -480,21 +480,21 @@ class SpeciesVerifierApp(ctk.CTk):
                 names_list = self.current_marine_names
                 context = getattr(self, 'current_marine_context', None)
                 is_file_data = True
-                print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
+                # 해양생물 탭: 파일 데이터 우선 사용
         elif tab_name == "microbe":
             # 미생물 탭: 파일 데이터 우선 사용
             if hasattr(self, 'current_microbe_names') and self.current_microbe_names:
                 names_list = self.current_microbe_names
                 context = getattr(self, 'current_microbe_context', None)
                 is_file_data = True
-                print(f"[Debug] 미생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
+                # 미생물 탭: 파일 데이터 사용
         elif tab_name == "col":
             # COL 탭: 파일 데이터 우선 사용
             if hasattr(self, 'current_col_names') and self.current_col_names:
                 names_list = self.current_col_names
                 context = getattr(self, 'current_col_context', None)
                 is_file_data = True
-                print(f"[Debug] COL 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
+                # COL 탭: 파일 데이터 사용
         
         # 파일 데이터가 없으면 입력 텍스트 사용
         if not names_list:
@@ -510,7 +510,7 @@ class SpeciesVerifierApp(ctk.CTk):
             if not names_list:
                 return
             
-            print(f"[Debug] {tab_name} 탭: 직접 입력된 {len(names_list)}개 학명 사용")
+            # 직접 입력 사용
         
         # 실시간 vs 배치 처리 결정
         realtime_threshold = app_config.REALTIME_PROCESSING_THRESHOLD
@@ -534,31 +534,23 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 해양생물 탭 콜백 함수 ---
     def _marine_search(self, input_text: str, tab_name: str = "marine"):
         """해양생물 검색 콜백"""
-        print(f"[Debug] _marine_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
-        
         # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
         if hasattr(self, 'current_marine_names') and self.current_marine_names:
-            print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(self.current_marine_names)}개 학명 사용")
             self._start_verification_thread(self.current_marine_names)
             # 사용 후 초기화하지 않음 (재사용 가능하도록)
         else:
             # 직접 입력된 텍스트로 검증
-            print(f"[Debug] 해양생물 탭: 직접 입력된 텍스트로 검증 시작")
             self._search_species(input_text, tab_name="marine")
 
     # --- COL(통합생물) 탭 콜백 함수 ---
     def _col_search(self, input_text: str, tab_name: str = "col"):
         """COL 통합생물 검색 콜백"""
-        print(f"[Debug] _col_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
-        
         # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
         if hasattr(self, 'current_col_names') and self.current_col_names:
-            print(f"[Debug] COL 탭: 파일에서 로드된 {len(self.current_col_names)}개 학명 사용")
             self._start_col_verification_thread(self.current_col_names)
             # 사용 후 초기화하지 않음 (재사용 가능하도록)
         else:
             # 직접 입력된 텍스트로 검증
-            print(f"[Debug] COL 탭: 직접 입력된 텍스트로 검증 시작")
             self._search_species(input_text, tab_name="col")
 
     def _col_file_browse(self):
@@ -614,7 +606,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.microbe_total_items = 0
         
         # 새 검색 시작 시 기존 결과 지우기
-        print("[Debug] 새 검색 시작 - COL 탭 기존 결과 지우기")
+        # 새 검색 시작 - COL 탭 기존 결과 지우기
         self.current_results_col.clear()
         if hasattr(self, 'result_tree_col') and self.result_tree_col:
             self.result_tree_col.clear()
@@ -895,17 +887,13 @@ class SpeciesVerifierApp(ctk.CTk):
     # --- 미생물 탭 콜백 함수 ---
     def _microbe_search(self, input_text: str, tab_name: str = "microbe"):
         """미생물 검색 콜백"""
-        print(f"[Debug] _microbe_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
-        
         # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
         if hasattr(self, 'current_microbe_names') and self.current_microbe_names:
-            print(f"[Debug] 파일에서 로드된 {len(self.current_microbe_names)}개 학명으로 검증 시작")
             context = getattr(self, 'current_microbe_context', None)
             self._start_microbe_verification_thread(self.current_microbe_names, context=context)
             # 사용 후 초기화하지 않음 (재사용 가능하도록)
         else:
             # 직접 입력된 텍스트로 검증
-            print(f"[Debug] 직접 입력된 텍스트로 검증 시작: '{input_text[:50] if input_text else 'None'}'")
             self._search_species(input_text, tab_name="microbe")
     
     def _microbe_file_browse(self):
@@ -1090,7 +1078,7 @@ class SpeciesVerifierApp(ctk.CTk):
         self.col_total_items = 0
         
         # 새 검색 시작 시 기존 결과 지우기
-        print("[Debug] 새 검색 시작 - 해양생물 탭 기존 결과 지우기")
+        # 새 검색 시작 - 해양생물 탭 기존 결과 지우기
         self.current_results_marine.clear()
         if hasattr(self, 'result_tree_marine') and self.result_tree_marine:
             self.result_tree_marine.clear()
@@ -1256,7 +1244,7 @@ class SpeciesVerifierApp(ctk.CTk):
     def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False):
         """미생물 검증 스레드 시작"""
         # 새 검색 시작 시 기존 결과 지우기
-        print("[Debug] 새 검색 시작 - 미생물 탭 기존 결과 지우기")
+        # 새 검색 시작 - 미생물 탭 기존 결과 지우기
         self.current_results_microbe.clear()
         if hasattr(self, 'result_tree_microbe') and self.result_tree_microbe:
             self.result_tree_microbe.clear()
@@ -2613,22 +2601,8 @@ class SpeciesVerifierApp(ctk.CTk):
         )
         help_textbox.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="nsew")
 
-        # --- 도움말 내용 파일에서 읽기 (수정) ---
-        help_text = "도움말 파일을 불러올 수 없습니다."
-        try:
-            # 현재 app.py 파일의 디렉토리를 기준으로 상대 경로 설정
-            current_dir = os.path.dirname(__file__)
-            help_file_path = os.path.join(current_dir, "..", "사용법_팝업.txt")
-            
-            # UTF-8 인코딩으로 파일 읽기
-            with open(help_file_path, 'r', encoding='utf-8') as f:
-                help_text = f.read()
-        except FileNotFoundError:
-            print(f"[Error] Help file not found at: {help_file_path}")
-            help_text = f"오류: 도움말 파일({os.path.basename(help_file_path)})을 찾을 수 없습니다."
-        except Exception as e:
-            print(f"[Error] Failed to read help file: {e}")
-            help_text = "오류: 도움말 파일을 읽는 중 문제가 발생했습니다."
+        # --- 도움말 내용 로드 (실행파일 지원) ---
+        help_text = self._get_help_text()
         # --- 수정 끝 ---
 
         # 텍스트 상자에 도움말 내용 삽입 및 읽기 전용 설정
@@ -2644,6 +2618,139 @@ class SpeciesVerifierApp(ctk.CTk):
             font=self.default_bold_font
         )
         close_button.grid(row=1, column=0, padx=20, pady=(0, 20))
+
+    def _get_help_text(self):
+        """도움말 텍스트를 가져옵니다 (파일 또는 내장)"""
+        # 먼저 파일에서 읽기 시도
+        try:
+            # 여러 경로에서 도움말 파일 찾기
+            possible_paths = [
+                os.path.join(os.path.dirname(__file__), "..", "사용법_팝업.txt"),  # 개발 환경
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "사용법_팝업.txt"),  # 절대 경로
+                os.path.join(os.getcwd(), "species_verifier", "사용법_팝업.txt"),  # 실행 디렉토리
+                os.path.join(os.getcwd(), "사용법_팝업.txt"),  # 현재 디렉토리
+            ]
+            
+            for file_path in possible_paths:
+                if os.path.exists(file_path):
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+        except Exception as e:
+            pass  # 파일 읽기 실패 시 내장 도움말 사용
+        
+        # 파일을 찾을 수 없거나 읽기 실패 시 내장 도움말 반환
+        return """🐟 국립수산과학원 학명 검증기 사용 안내 🐟
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 기본 사용법
+
+🔹 탭 선택
+   검증할 생물 종류에 맞는 탭을 선택하세요
+   • 해양생물(WoRMS): 해양 및 연안 생물
+   • 미생물(LPSN): 세균, 고세균 등 미생물
+   • 담수 등 전체생물(COL): 담수생물, 육상생물 포함 전체
+
+🔹 직접 입력 (⚡ 실시간 처리)
+   • 텍스트 상자에 학명 입력 (쉼표로 구분)
+   • 최대 10개까지 입력 가능
+   • 입력 후 '검증' 버튼 클릭
+   • ✨ 특징: 즉시 실시간 처리로 빠른 결과 확인 
+     (0.6초 간격)
+
+🔹 파일 입력 (📁 배치 처리)
+   • CSV, XLSX, TXT 파일 사용 (첫 열에 학명)
+   • '찾기' 버튼으로 파일 선택 (최대 3,000개)
+   • '검증' 버튼 클릭
+   • ✨ 특징: 100개씩 배치로 안전하게 처리 
+     (1.2초 간격, 배치간 3초 지연)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 결과 확인 및 활용
+
+🔹 결과 보기
+   • 하단 목록에 실시간으로 표시
+   • 검증 상태, 유효명, 분류 정보 등 포함
+
+🔹 결과 복사 (🖱️ 우클릭)
+   • 특정 셀: '{컬럼명}' 내용 복사
+   • 행 전체: 선택 행 전체 정보 복사
+
+🔹 추가 기능
+   • 🔗 URL 열기: URL 셀 더블클릭
+   • 💾 Excel 저장: 하단 '저장' 버튼 또는 우클릭 메뉴
+   • 🗑️ 결과 지우기: 저장 후 자동 삭제 옵션 제공
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔄 파일 캐시 관리
+
+🔹 캐시 동작
+   • 파일 로드 후: 텍스트 입력해도 파일 데이터로 검증
+   • 검증 완료 후: 파일 캐시 자동 삭제
+   • 검증 취소 후: 모든 탭 캐시 삭제
+
+🔹 재사용 방법
+   • 파일로 다시 검증: '파일 찾기' 버튼 재클릭
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⏱️ 처리 시간 안내
+
+🔹 실시간 처리 (직접 입력 ≤ 10개)
+   • 소요시간: 약 10-30초
+   • 개별 항목: 약 0.6초 (API 방식 최적화)
+   • ✅ 빠른 확인에 최적
+
+🔹 배치 처리 (파일 입력)
+   • 100개: 약 2-3분
+   • 1,000개: 약 15-35분
+   • 3,000개: 약 45분-1시간 45분
+   • ⚠️ 참고: 네트워크 상태에 따라 변동 가능
+
+🔹 안전 설정
+   • API 방식: 0.6초 간격 (WoRMS, COL)
+   • 웹 스크래핑: 1.8초 간격 (LPSN 미생물)
+   • 배치간 지연: 3초 (서버 보호)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 사용 팁 & 문제 해결
+
+🔹 처리 방식 선택
+   • 🚀 빠른 확인: 10개 이하 → 직접 입력 (실시간)
+   • 📦 대량 처리: 11개 이상 → 파일 입력 (배치)
+
+🔹 네트워크 오류 시
+   • 특정 항목 실패: 우클릭으로 복사 후 재시도
+   • 전체 실패: 네트워크 연결 확인 후 재시도
+
+🔹 입력 제한
+   • 직접 입력: 최대 10개
+   • 파일 입력: 최대 3,000개
+   • 초과 시: 나누어서 처리
+
+🔹 기업 네트워크 지원
+   • 프록시 환경 자동 감지
+   • SSL 인증서 문제 해결
+   • 방화벽 우회 최적화
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📞 문의 및 지원
+
+🔹 기술 지원
+   • 📧 이메일: ecomarine@korea.kr
+   • 💬 개선 제안 및 오류 신고 환영
+
+🔹 업데이트 정보
+   • 주요 개선: API 속도 최적화, 차단 방지 강화
+   • 차기 버전: DeepSearch 기능 추가 예정
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🙏 이용해 주셔서 감사합니다!"""
 
     def _clear_file_cache(self, tab_type: str):
         """탭별 파일 캐시 삭제"""

@@ -267,7 +267,7 @@ class ColTabFrame(BaseTabFrame):
 
     def _on_file_browse_click(self):
         """파일 찾기 버튼 클릭 시 파일 처리 콜백 호출"""
-        print("[Debug COL] 파일 찾기 버튼 클릭. 'on_file_browse' 콜백 트리거.")
+        # 파일 찾기 버튼 클릭
         self.trigger_callback("on_file_browse")
 
     def _on_file_clear_click(self):
@@ -278,13 +278,7 @@ class ColTabFrame(BaseTabFrame):
 
     def _trigger_verify_callback(self):
         """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
-        print("[Debug COL] 검증 버튼 클릭됨")
         text_input = self.entry.get("0.0", "end-1c").strip()
-        
-        # 'on_search' 콜백은 app._search_species를 호출합니다.
-        # 이 함수는 파일에서 로드된 데이터가 있는지 먼저 확인하고, 
-        # 없으면 텍스트 입력을 사용합니다.
-        print("[Debug COL] 'on_search' 콜백 트리거 (tab=col)")
         self.trigger_callback("on_search", text_input, "col")
 
     def set_selected_file(self, file_path: str):
@@ -296,7 +290,7 @@ class ColTabFrame(BaseTabFrame):
             # 파일 내 학명(또는 레코드) 개수 계산 후 저장
             try:
                 self.file_entry_count = self._calculate_file_entries(file_path)
-                print(f"[Debug COL] 파일에서 {self.file_entry_count}개 항목 계산됨")
+                # 파일 항목 수 계산 완료
             except Exception as e:
                 print(f"[Error ColTab] 파일 항목 개수 계산 중 오류: {e}")
                 self.file_entry_count = 0
@@ -360,7 +354,7 @@ class ColTabFrame(BaseTabFrame):
                     text_color=self.COMMON_COLORS['button_text_verifying']
                 )
             
-            print(f"[Debug COL] 입력 상태 변경 완료: {state}")
+            # 입력 상태 변경 완료
             
         except Exception as e:
             print(f"[Error COL] 입력 상태 변경 중 오류: {e}")
