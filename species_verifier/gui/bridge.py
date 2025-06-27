@@ -86,17 +86,17 @@ def perform_verification(
             adapted_msv_callback = lambda r_dict, t="marine": result_callback(r_dict, t)
 
         try:
-            # 실시간 모드에 따른 설정
+            # 실시간 모드에 따른 설정 (차단 방지를 위한 안전 지연 시간 적용)
             if realtime_mode:
                 print(f"[Bridge] 실시간 모드: {len(verification_list_input)}개 항목 빠르게 처리")
-                # 실시간 모드에서는 API 지연 시간을 최소화
+                # 실시간 모드에서도 차단 방지를 위한 안전 지연 시간 적용
                 from species_verifier.config import api_config
-                api_delay = api_config.REALTIME_REQUEST_DELAY  # 0.5초
+                api_delay = api_config.REALTIME_REQUEST_DELAY  # 0.8초 (차단 방지)
             else:
                 print(f"[Bridge] 배치 모드: {len(verification_list_input)}개 항목 안정적으로 처리")
-                # 배치 모드에서는 기본 지연 시간 사용
+                # 배치 모드에서는 더 안전한 지연 시간 사용
                 from species_verifier.config import api_config
-                api_delay = api_config.REQUEST_DELAY  # 1.0초
+                api_delay = api_config.REQUEST_DELAY  # 1.5초 (차단 방지)
             
             # API 지연 시간 적용
             import species_verifier.core.worms_api as worms_api

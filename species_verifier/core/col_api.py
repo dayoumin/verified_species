@@ -8,39 +8,58 @@ from urllib3.util.retry import Retry
 from species_verifier.utils.logger import get_logger
 
 def create_robust_session():
-    """브라우저와 유사한 자연스러운 네트워크 세션 생성"""
+    """기관 네트워크 환경에 최적화된 강화된 세션 생성"""
     logger = get_logger()
-    logger.debug("네트워크 세션 초기화 중...")
-    
     session = requests.Session()
     
-    # 안정적인 연결 설정
-    pool_settings = ENTERPRISE_CONFIG["connection_pool_settings"]
+    # 안전한 설정 접근
+    try:
+        pool_settings = ENTERPRISE_CONFIG.get("connection_pool_settings", {
+            "pool_connections": 3,
+            "pool_maxsize": 5,
+            "pool_block": True
+        })
+    except Exception as e:
+        logger.warning(f"connection_pool_settings 설정 오류: {e}")
+        pool_settings = {"pool_connections": 3, "pool_maxsize": 5, "pool_block": True}
+    
+    try:
+        retry_config = ENTERPRISE_CONFIG.get("enhanced_retry", {
+            "backoff_factor": 2.0,
+            "status_forcelist": [429, 500, 502, 503, 504],
+            "allowed_methods": ["GET", "POST"]
+        })
+    except Exception as e:
+        logger.warning(f"enhanced_retry 설정 오류: {e}")
+        retry_config = {
+            "backoff_factor": 2.0,
+            "status_forcelist": [429, 500, 502, 503, 504],
+            "allowed_methods": ["GET", "POST"]
+        }
+    
+    # 연결 풀 설정 (안정성 우선)
+    retry_strategy = Retry(
+        total=api_config.MAX_RETRIES,
+        backoff_factor=retry_config["backoff_factor"],
+        status_forcelist=retry_config["status_forcelist"],
+        allowed_methods=retry_config["allowed_methods"]
+    )
+    
     adapter = HTTPAdapter(
+        max_retries=retry_strategy,
         pool_connections=pool_settings["pool_connections"],
         pool_maxsize=pool_settings["pool_maxsize"],
         pool_block=pool_settings["pool_block"]
     )
     
-    # 적절한 재시도 전략 (서버 부담 고려)
-    retry_config = ENTERPRISE_CONFIG["enhanced_retry"]
-    retry_strategy = Retry(
-        total=3,  # 적절한 재시도 횟수
-        backoff_factor=1.5,  # 적절한 백오프 계수
-        status_forcelist=retry_config["status_forcelist"],
-        allowed_methods=retry_config["allowed_methods"]
-    )
-    
-    adapter.max_retries = retry_strategy
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     
-    # 시스템 프록시 설정 자동 감지 (브라우저와 동일)
+    # 시스템 프록시 설정 사용 (보안 정책 준수)
     session.trust_env = True
     
-    # 기업 환경 SSL 처리 (브라우저와 동일한 방식)
+    # SSL 인증서 검증 강화 (브라우저 수준)
     try:
-        import ssl
         import certifi
         # 시스템 인증서 저장소 사용 (브라우저와 동일)
         session.verify = certifi.where()
@@ -55,7 +74,16 @@ def create_robust_session():
 def try_with_different_user_agents(url, params, session, timeout):
     """브라우저와 유사한 방식으로 API 요청 (SSL 오류 해결)"""
     logger = get_logger()
-    user_agents = ENTERPRISE_CONFIG["fallback_user_agents"]
+    
+    # fallback_user_agents를 안전하게 접근
+    try:
+        user_agents = ENTERPRISE_CONFIG.get("fallback_user_agents", [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0"
+        ])
+    except Exception as e:
+        logger.warning(f"fallback_user_agents 설정 오류: {e}")
+        user_agents = [api_config.USER_AGENT]
     
     # SSL 설정 옵션들 (브라우저 수준)
     ssl_configs = [
@@ -111,7 +139,7 @@ def try_with_different_user_agents(url, params, session, timeout):
                 continue
     
     # 모든 시도 실패
-    raise Exception("네트워크 연결 실패")
+    raise Exception("네트워크 연결 실패 - 모든 연결 방법 시도 후 실패")
 
 def verify_col_species(scientific_name: str) -> Dict[str, Any]:
     """
@@ -128,16 +156,16 @@ def verify_col_species(scientific_name: str) -> Dict[str, Any]:
     params = {"q": scientific_name, "limit": 1, "type": "EXACT"}
     
     # config 값 안전하게 처리
-    if api_config is not None:
-        timeout = api_config.COL_REQUEST_TIMEOUT
-    else:
+    try:
+        timeout = api_config.COL_REQUEST_TIMEOUT if api_config is not None else 30
+    except Exception:
         timeout = 30
-        print("[Warning COL API] api_config가 None이므로 기본값 사용")
+        print("[Warning COL API] api_config 접근 오류, 기본값 사용")
 
     # 강화된 세션 생성
-    session = create_robust_session()
-    
+    session = None
     try:
+        session = create_robust_session()
         logger = get_logger()
         logger.debug(f"학명 검증 요청: {scientific_name}")
         
@@ -216,11 +244,34 @@ def verify_col_species(scientific_name: str) -> Dict[str, Any]:
                 "심층분석 결과": "준비 중 (DeepSearch 기능 개발 예정)"
             }
             
+    except KeyError as e:
+        # KeyError 구체적으로 처리
+        logger = get_logger()
+        error_message = f"설정 키 오류: {str(e)}"
+        logger.warning(f"학명 검증 실패 (KeyError): {scientific_name} - {str(e)}")
+        
+        return {
+            "query": scientific_name, 
+            "input_name": scientific_name, 
+            "matched": False, 
+            "error": error_message,
+            "학명": scientific_name, 
+            "scientific_name": scientific_name, 
+            "is_verified": False,
+            "검증": "Configuration Error", 
+            "status": "config_error", 
+            "COL 상태": f"설정 오류: {str(e)}",
+            "COL ID": "-", 
+            "col_id": "-", 
+            "COL URL": "-", 
+            "col_url": "-", 
+            "심층분석 결과": "준비 중 (DeepSearch 기능 개발 예정)"
+        }
     except Exception as e:
-        # 연결 실패시 오류 반환
+        # 일반 예외 처리
         logger = get_logger()
         error_message = f"네트워크 오류: {str(e)}"
-        logger.warning(f"학명 검증 실패: {scientific_name} - {type(e).__name__}")
+        logger.warning(f"학명 검증 실패: {scientific_name} - {type(e).__name__}: {str(e)}")
         
         return {
             "query": scientific_name, 
@@ -241,4 +292,8 @@ def verify_col_species(scientific_name: str) -> Dict[str, Any]:
         }
     finally:
         # 세션 정리
-        session.close() 
+        if session:
+            try:
+                session.close()
+            except Exception:
+                pass  # 세션 정리 실패는 무시 

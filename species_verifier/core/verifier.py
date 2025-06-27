@@ -276,19 +276,23 @@ def verify_single_microbe_lpsn(microbe_name):
     species_detail_url = None
     
     try:
-        # LPSN 접근을 위한 헤더 설정 (config에서 가져옴)
-        if api_config is not None:
-            headers = api_config.DEFAULT_HEADERS
-            request_delay = api_config.REQUEST_DELAY
-            request_timeout = api_config.REQUEST_TIMEOUT
+        # LPSN 웹 스크래핑을 위한 헤더 설정 (전용 지연 시간 적용)
+        # api_config를 직접 import하여 사용
+        from species_verifier.config import api_config as config_instance
+        
+        if config_instance is not None:
+            headers = config_instance.DEFAULT_HEADERS
+            request_delay = config_instance.LPSN_REQUEST_DELAY  # LPSN 전용 지연 시간 사용 (1.8초)
+            request_timeout = config_instance.REQUEST_TIMEOUT
+            print(f"[Info LPSN Core] LPSN 전용 지연 시간 적용: {request_delay}초")
         else:
-            # api_config가 None인 경우 기본값 사용
+            # fallback 기본값 사용
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
-            request_delay = 1.0
+            request_delay = 1.8  # LPSN 기본 지연 시간
             request_timeout = 10
-            print("[Warning LPSN Core] api_config가 None이므로 기본값 사용")
+            print("[Warning LPSN Core] config 인스턴스가 None이므로 기본값 사용")
         
         # 학명에서 종명 추출하여 직접 URL 생성 (예: Streptococcus parauberis -> streptococcus-parauberis)
         genus_species = cleaned_name.lower().replace(' ', '-')
@@ -298,7 +302,10 @@ def verify_single_microbe_lpsn(microbe_name):
         print(f"[Info LPSN Core] 검색 URL: {search_url}")
         
         try:
-            # 첫 번째 요청은 지연 없이, 재시도만 지연 적용
+            # LPSN 전용 지연 시간 적용 (차단 방지)
+            import time
+            time.sleep(request_delay)
+            print(f"[Debug LPSN Core] {request_delay}초 지연 적용 완료")
             
             # 기업 네트워크 환경 대응: 이중 SSL 전략 적용
             ssl_configs = [

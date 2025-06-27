@@ -53,9 +53,12 @@ class APIConfig:
     GEMINI_ENABLED = bool(GEMINI_API_KEY)
     
     # API 요청 지연 시간 및 재시도 설정
-    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.0"))  # 실시간 처리용 지연 시간 (2.0 -> 1.0초로 단축)
-    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.3"))  # 실시간 처리 전용 지연 시간 (0.5 -> 0.3초로 단축)
+    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.2"))  # 배치 처리용 지연 시간 (1.5 -> 1.2초로 감소, API 방식 최적화)
+    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.6"))  # 실시간 처리 전용 지연 시간 (0.8 -> 0.6초로 감소, API 방식 최적화)
     BATCH_DELAY = float(os.getenv("BATCH_DELAY", "3.0"))  # 배치간 지연 시간 (초) - 파일 처리용 유지
+    
+    # LPSN 웹 스크래핑 전용 지연 시간 (더 안전하게)
+    LPSN_REQUEST_DELAY = float(os.getenv("LPSN_REQUEST_DELAY", "1.8"))  # 웹 스크래핑용 지연 시간 (더 안전하게)
     
     # 네트워크 안정성 설정 (외부망 환경을 위해 강화)
     REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))  # HTTP 요청 타임아웃 (초) - 30 -> 20으로 감소 (빠른 실패)
@@ -107,31 +110,33 @@ app_config = AppConfig()
 api_config = APIConfig()
 ui_config = UIConfig()
 
-# 기관 네트워크 환경을 위한 추가 설정
+# 기관 네트워크 환경을 위한 추가 설정 (정상적인 학술 연구용 설정)
 ENTERPRISE_CONFIG = {
     # 네트워크 연결 최적화 설정
-    "bypass_proxy": False,  # 시스템 프록시 설정 사용
+    "bypass_proxy": False,  # 시스템 프록시 설정 사용 (보안 정책 준수)
     
-    # 다양한 브라우저 User-Agent (자연스러운 접속을 위해)
+    # 표준 브라우저 User-Agent (학술 연구용 정상 접속)
+    "standard_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    
+    # 다중 User-Agent 백업 (네트워크 접근성 향상)
     "fallback_user_agents": [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ],
     
-    # 연결 안정성 강화 설정
+    # 연결 안정성 설정 (학술 API 접속 최적화)
     "connection_pool_settings": {
-        "pool_connections": 5,  # 연결 풀 크기 감소
-        "pool_maxsize": 10,     # 최대 연결 수 감소
-        "pool_block": True      # 연결 풀이 가득 찰 때 대기
+        "pool_connections": 3,  # 적정 수준의 연결 풀 크기
+        "pool_maxsize": 5,      # 최대 연결 수 (과도하지 않게)
+        "pool_block": True      # 연결 풀이 가득 찰 때 대기 (안정성 우선)
     },
     
-    # 재시도 전략 강화
+    # 재시도 전략 (네트워크 불안정 대응)
     "enhanced_retry": {
-        "backoff_factor": 2.0,  # 지수 백오프 계수
-        "status_forcelist": [429, 500, 502, 503, 504],  # 재시도할 HTTP 상태 코드
-        "allowed_methods": ["GET", "POST"]  # 재시도 허용 메서드
+        "backoff_factor": 2.0,  # 표준 지수 백오프
+        "status_forcelist": [429, 500, 502, 503, 504],  # 일반적인 재시도 상태 코드
+        "allowed_methods": ["GET", "POST"]  # 표준 HTTP 메서드만
     }
 } 
