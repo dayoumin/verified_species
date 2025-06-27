@@ -52,10 +52,8 @@ def get_aphia_id(scientific_name: str, check_cancelled: Optional[Callable[[], bo
         
         for ssl_config in ssl_configs:
             try:
-                # SSL 우회 사용 시 로깅 및 경고 처리
+                # SSL 우회 사용 시 조용히 처리
                 if not ssl_config['verify']:
-                    if SSL_CONFIG.get("log_ssl_bypass", True):
-                        print(f"[Warning] ⚠️ WoRMS AphiaID - SSL 검증 우회 사용 중")
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
                 response = requests.get(
@@ -66,22 +64,16 @@ def get_aphia_id(scientific_name: str, check_cancelled: Optional[Callable[[], bo
                 )
                 response.raise_for_status()
                 
-                # 성공 로깅
-                if ssl_config['verify']:
-                    print(f"[Debug] ✅ WoRMS AphiaID 보안 연결 성공: {scientific_name}")
-                else:
-                    print(f"[Info] ⚠️ WoRMS AphiaID SSL 우회로 연결 성공: {scientific_name}")
+                # 연결 성공 - 조용히 처리
                 
                 break  # 성공하면 루프 탈출
                 
             except requests.exceptions.SSLError:
-                print(f"[Debug] WoRMS SSL 오류: {ssl_config['description']}")
                 if ssl_config['verify']:
                     continue  # SSL 검증 실패시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
             except Exception as e:
-                print(f"[Debug] WoRMS 연결 오류: {ssl_config['description']} - {type(e).__name__}")
                 if ssl_config['verify']:
                     continue  # 기타 오류시 다음 설정으로 시도
                 else:
@@ -178,10 +170,8 @@ def get_aphia_record(aphia_id: int, check_cancelled: Optional[Callable[[], bool]
         
         for ssl_config in ssl_configs:
             try:
-                # SSL 우회 사용 시 로깅 및 경고 처리
+                # SSL 우회 사용 시 조용히 처리
                 if not ssl_config['verify']:
-                    if SSL_CONFIG.get("log_ssl_bypass", True):
-                        print(f"[Warning] ⚠️ WoRMS AphiaRecord - SSL 검증 우회 사용 중")
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
                 response = requests.get(
@@ -192,22 +182,16 @@ def get_aphia_record(aphia_id: int, check_cancelled: Optional[Callable[[], bool]
                 )
                 response.raise_for_status()
                 
-                # 성공 로깅
-                if ssl_config['verify']:
-                    print(f"[Debug] ✅ WoRMS AphiaRecord 보안 연결 성공: {aphia_id}")
-                else:
-                    print(f"[Info] ⚠️ WoRMS AphiaRecord SSL 우회로 연결 성공: {aphia_id}")
+                # 연결 성공 - 조용히 처리
                 
                 break  # 성공하면 루프 탈출
                 
             except requests.exceptions.SSLError:
-                print(f"[Debug] WoRMS SSL 오류: {ssl_config['description']}")
                 if ssl_config['verify']:
                     continue  # SSL 검증 실패시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
             except Exception as e:
-                print(f"[Debug] WoRMS 연결 오류: {ssl_config['description']} - {type(e).__name__}")
                 if ssl_config['verify']:
                     continue  # 기타 오류시 다음 설정으로 시도
                 else:

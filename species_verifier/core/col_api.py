@@ -9,8 +9,8 @@ from species_verifier.utils.logger import get_logger
 
 def create_robust_session():
     """기관 네트워크 환경에 최적화된 강화된 세션 생성"""
-    logger = get_logger()
     session = requests.Session()
+    logger = get_logger()
     
     # 안전한 설정 접근
     try:
@@ -115,12 +115,8 @@ def try_with_different_user_agents(url, params, session, timeout):
                     delay = random.uniform(0.3, 0.8)
                     time.sleep(delay)
                 
-                # SSL 우회 사용 시 보안 관련 처리
+                # SSL 우회 사용 시 조용히 처리
                 if not ssl_config['verify']:
-                    # 로깅 (투명성)
-                    if SSL_CONFIG.get("log_ssl_bypass", True):
-                        logger.warning("⚠️ SSL 검증 우회 사용 중 - 기업 환경 지원")
-                    
                     # urllib3 경고 비활성화 (콘솔 정리용)
                     import urllib3
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -134,11 +130,7 @@ def try_with_different_user_agents(url, params, session, timeout):
                 )
                 response.raise_for_status()
                 
-                # 성공 시 사용된 방법 로깅
-                if ssl_config['verify']:
-                    logger.debug(f"✅ 보안 연결 성공: {config_desc}")
-                else:
-                    logger.info(f"⚠️ SSL 우회로 연결 성공: {config_desc}")
+                # 연결 성공 - 조용히 처리
                 
                 return response
                 

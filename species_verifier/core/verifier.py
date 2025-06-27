@@ -41,7 +41,6 @@ try:
         # 기업 환경 지원이 활성화된 경우에만 경고 비활성화
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        logger.info("🔒 기업 네트워크 환경 지원 - SSL 경고 비활성화")
 except ImportError:
     # 설정 파일이 없는 경우 기본 동작
     pass
@@ -350,10 +349,9 @@ def verify_single_microbe_lpsn(microbe_name):
                         if ssl_idx > 0 or ua_idx > 0:
                             time.sleep(0.3)  # 재시도 시 짧은 지연
                         
-                        # SSL 우회 사용 시 로깅 (투명성)
+                        # SSL 우회 사용 시 필요한 경우에만 로깅
                         if not ssl_config['verify']:
-                            if SSL_CONFIG.get("log_ssl_bypass", True):
-                                logger.warning("⚠️ LPSN 미생물 검증 - SSL 검증 우회 사용 중")
+                            pass  # 조용히 처리
                         
                         # 브라우저 수준 헤더 사용
                         enhanced_headers = {
@@ -374,27 +372,20 @@ def verify_single_microbe_lpsn(microbe_name):
                         )
                         direct_response.raise_for_status()  # 404 등의 오류 확인
                         
-                        # 성공 로깅
-                        if ssl_config['verify']:
-                            print(f"[Info] ✅ LPSN 보안 연결 성공: {config_desc}")
-                        else:
-                            print(f"[Info] ⚠️ LPSN SSL 우회로 연결 성공: {config_desc}")
+                        # 연결 성공 - 조용히 처리
                         break  # 성공하면 탈출
                         
                     except requests.exceptions.SSLError:
-                        print(f"[Debug LPSN Core] SSL 오류: {config_desc}")
                         if ssl_config['verify']:
                             continue  # 다음 설정으로 시도
                         else:
                             raise
                     except requests.exceptions.HTTPError as e:
-                        print(f"[Debug LPSN Core] HTTP 오류 {e.response.status_code}: {config_desc}")
                         if e.response.status_code in [403, 429]:
                             continue  # 다른 User-Agent로 시도
                         else:
                             raise
                     except Exception as e:
-                        print(f"[Debug LPSN Core] 연결 오류: {config_desc} - {type(e).__name__}")
                         continue
                 
                 if direct_response is not None:

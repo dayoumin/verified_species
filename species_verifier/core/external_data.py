@@ -9,7 +9,6 @@ try:
     if SSL_CONFIG.get("allow_insecure_fallback", False):
         # 기업 환경 지원이 활성화된 경우에만 경고 비활성화
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        print("[Info] 🔒 Wikipedia 모듈 - 기업 네트워크 환경 지원")
 except ImportError:
     # 설정 파일이 없는 경우 기본 동작
     pass
@@ -33,9 +32,7 @@ def get_wikipedia_summary(scientific_name, lang='en'):
         
         for ssl_config in ssl_configs:
             try:
-                # SSL 우회 사용 시 로깅
-                if not ssl_config['verify'] and SSL_CONFIG.get("log_ssl_bypass", True):
-                    print(f"[Warning] ⚠️ Wikipedia API - SSL 검증 우회 사용 중")
+                # SSL 우회 사용 시 조용히 처리
                 
                 # wikipediaapi에 SSL 설정 적용
                 wiki = wikipediaapi.Wikipedia(
@@ -49,29 +46,23 @@ def get_wikipedia_summary(scientific_name, lang='en'):
                 
                 page = wiki.page(scientific_name)
                 if page.exists():
-                    # 성공 로깅
-                    if ssl_config['verify']:
-                        print(f"[Debug] ✅ Wikipedia 보안 연결 성공")
-                    else:
-                        print(f"[Info] ⚠️ Wikipedia SSL 우회로 연결 성공")
+                    # 연결 성공 - 조용히 처리
                     return page.summary
                 return None
                 
             except requests.exceptions.SSLError:
-                print(f"[Debug] Wikipedia SSL 오류: {ssl_config['description']}")
                 if ssl_config['verify']:
                     continue  # SSL 검증 실패시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
             except Exception as e:
-                print(f"[Debug] Wikipedia 연결 오류: {ssl_config['description']} - {type(e).__name__}")
                 if ssl_config['verify']:
                     continue  # 기타 오류시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
                     
     except Exception as e:
-        print(f"[Error Wikipedia] 모든 보안 연결 방법 실패: {e}")
+        # 조용히 실패 처리
         return None
 
 def enrich_with_wikipedia(species_data):
