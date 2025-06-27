@@ -56,6 +56,22 @@ class BaseTabFrame(ctk.CTkFrame):  # 기존 클래스에서 ctk.CTkFrame을 상�
     각 탭 프레임은 이 클래스를 상속받아 구현해야 합니다.
     """
     
+    # 공통 색상 상수 정의 (모든 탭에서 일관된 색상 사용)
+    COMMON_COLORS = {
+        'header_text': ("#1f538d", "#4a9eff"),  # 헤더 텍스트 색상 (파란색)
+        'count_text': ("gray60", "gray40"),     # 개수 표시 텍스트 색상
+        'entry_text_normal': ("black", "white"), # 일반 입력 텍스트 색상
+        'entry_text_placeholder': "gray",       # 플레이스홀더 텍스트 색상
+        'count_warning': ("red", "red"),        # 경고 개수 표시 색상
+        'button_primary': ("#1f538d", "#4a9eff"), # 주 버튼 색상
+        'button_primary_hover': ("#174a7a", "#3d8ae6"), # 주 버튼 호버 색상
+        'button_secondary': ("gray70", "gray30"), # 보조 버튼 색상
+        'button_secondary_hover': ("gray60", "gray40"), # 보조 버튼 호버 색상
+        'button_text': "white",                 # 버튼 텍스트 색상 (항상 흰색)
+        'button_text_disabled': "white",        # 비활성화된 버튼 텍스트 색상 (항상 흰색)
+        'button_text_hover': "white",           # 호버 시 버튼 텍스트 색상 (항상 흰색)
+    }
+    
     def __init__(self, parent, *args, **kwargs):
         """
         초기화

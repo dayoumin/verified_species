@@ -1,0 +1,22 @@
+# Species Verifier - 기관 네트워크 환경 최적화 설정
+# 이 파일을 .env로 복사하여 사용하세요
+
+# 네트워크 안정성 설정 (기관 환경에 최적화)
+REQUEST_DELAY=3.0
+REQUEST_TIMEOUT=45
+MAX_RETRIES=7
+RETRY_DELAY=5.0
+
+# API별 타임아웃 설정
+COL_REQUEST_TIMEOUT=45
+WIKIPEDIA_REQUEST_TIMEOUT=30
+
+# User-Agent 설정 (차단 우회용)
+USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36
+
+# 연결 풀 설정 (기관 네트워크에 최적화)
+CONNECTION_POOL_SIZE=3
+CONNECTION_POOL_MAXSIZE=5
+
+# 로깅 레벨 (디버깅용)
+LOG_LEVEL=DEBUG 

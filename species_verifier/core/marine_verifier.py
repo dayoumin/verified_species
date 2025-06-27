@@ -192,10 +192,9 @@ class MarineSpeciesVerifier:
                                 name_for_wiki = display_name
                                 
                             try:
-                                # 위키백과 검색 (check_cancelled 콜백 전달)
-                                wiki_summary = get_wiki_summary(name_for_wiki, check_cancelled=self.check_cancelled)
-                                result_entry['wiki_summary'] = wiki_summary
-                                print(f"[Info Wiki] '{name_for_wiki}' 위키 요약 길이: {len(wiki_summary)}자")
+                                # 심층분석 결과는 현재 준비 중으로 설정 (향후 DeepSearch 기능 구현 예정)
+                                print(f"[Info Wiki] '{name_for_wiki}' 심층분석 결과: 준비 중")
+                                result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                                 
                                 # 위키 검색 후 취소 확인
                                 if self.check_cancelled and self.check_cancelled():
@@ -206,17 +205,17 @@ class MarineSpeciesVerifier:
                             except Exception as e:
                                 print(f"[Error Wiki] 심층분석 결과 가져오기 오류 ({name_for_wiki}): {e}")
                                 traceback.print_exc()
-                                result_entry['wiki_summary'] = f"위키 오류: {str(e)[:100]}"
+                                result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                         else:
-                            result_entry['wiki_summary'] = '검증되지 않아 위키 검색을 건너뜁니다.'
+                            result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                     else:
                         print(f"[Warning] 검증 결과 없음: {display_name}")
                         result_entry = self.create_basic_result(
                             display_name, display_name, False, "WoRMS 결과 없음"
                         )
                         
-                        # 위키 검색도 하지 않음
-                        result_entry['wiki_summary'] = '검증 실패로 위키 검색을 건너뜁니다.'
+                        # 심층분석 결과는 현재 준비 중으로 설정
+                        result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                 except Exception as e:
                     print(f"[Error] Species verification failed for '{scientific_name}': {e}")
                     traceback.print_exc()

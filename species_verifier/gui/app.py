@@ -4,6 +4,78 @@
 이 모듈은 종 검증 애플리케이션의
 메인 클래스와 애플리케이션 실행 함수를 정의합니다.
 """
+
+# === 기업/공공기관 네트워크 환경 완전 지원 ===
+import ssl
+import urllib.request
+import urllib3
+
+# 1. truststore 적용 (OS 신뢰 저장소 사용)
+try:
+    import truststore
+    truststore.inject_into_ssl()
+    print("[Info] ✅ truststore 적용 완료 - OS 신뢰 저장소 사용")
+except ImportError:
+    print("[Warning] ❌ truststore 없음 - pip install truststore 필요")
+except Exception as e:
+    print(f"[Warning] ❌ truststore 초기화 실패: {e}")
+
+# 2. requests 세션 설정 강화
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# 글로벌 requests 세션 생성 (프록시 자동 감지 + 재시도 로직)
+def create_enterprise_session():
+    """기업 환경에 최적화된 requests 세션 생성"""
+    session = requests.Session()
+    
+    # 재시도 전략 설정
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        backoff_factor=1
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    # 프록시 자동 감지 (시스템 설정 사용)
+    session.trust_env = True
+    
+    # 타임아웃 설정
+    session.timeout = 30
+    
+    return session
+
+# 글로벌 세션 생성
+try:
+    enterprise_session = create_enterprise_session()
+    # 기존 requests.get을 패치하여 글로벌 세션 사용
+    original_get = requests.get
+    original_post = requests.post
+    
+    def patched_get(*args, **kwargs):
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 30
+        return enterprise_session.get(*args, **kwargs)
+    
+    def patched_post(*args, **kwargs):
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 30
+        return enterprise_session.post(*args, **kwargs)
+    
+    requests.get = patched_get
+    requests.post = patched_post
+    print("[Info] ✅ 기업 네트워크 최적화 세션 적용 완료")
+except Exception as e:
+    print(f"[Warning] ❌ 세션 설정 실패: {e}")
+
+# 3. urllib3 경고 비활성화 (프록시 환경에서 발생하는 불필요한 경고)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+print("[Info] 🌐 네트워크 환경 설정 완료 - Figma 수준의 연결성 제공")
+
 import os
 import tkinter as tk
 import threading
@@ -34,6 +106,7 @@ from species_verifier.gui.bridge import (
     process_file,
     process_microbe_file
 )
+from species_verifier.utils.logger import get_logger
 
 
 class SpeciesVerifierApp(ctk.CTk):
@@ -54,6 +127,10 @@ class SpeciesVerifierApp(ctk.CTk):
         """초기화"""
         super().__init__()
         
+        # 로깅 시작
+        self.logger = get_logger()
+        self.logger.info("Species Verifier 시작")
+        
         # 한국어 매핑 기능 사용하지 않음
         
         # 내부 상태 변수 - active_tab 제거 (CTkTabview가 관리)
@@ -64,6 +141,11 @@ class SpeciesVerifierApp(ctk.CTk):
         self.is_verifying = False # 현재 검증 작업 진행 여부 플래그
         self.is_cancelled = False # 작업 취소 요청 플래그 (추가)
         self.result_queue = queue.Queue() # 결과 처리를 위한 큐
+        
+        # 중단기능 안전성을 위한 스레드 락 추가
+        self._cancel_lock = threading.Lock()  # 취소 관련 작업 동기화
+        self._verification_lock = threading.Lock()  # 검증 상태 동기화
+        self._is_cancelling = False  # 취소 작업 진행 중 플래그
         
         # 미생물 파일 로드 관련 변수 초기화
         self.current_microbe_names = None  # 파일에서 로드된 미생물 학명 목록
@@ -383,36 +465,37 @@ class SpeciesVerifierApp(ctk.CTk):
     
     # --- 통합 검색 함수 ---
     def _search_species(self, input_text: str, tab_name: str = "marine"):
-        """통합 학명 검색 콜백"""
+        """통합 학명 검색 콜백 - 실시간/배치 처리 구분"""
         if self.is_verifying:
             self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
             return
         
-        # 파일에서 로드된 데이터가 있는지 확인하고 우선 사용
+        # 파일에서 로드된 데이터가 있는지 확인하고 우선 사용 (항상 배치 처리)
         names_list = None
         context = None
+        is_file_data = False
         
         if tab_name == "marine":
             # 해양생물 탭: 파일 데이터 우선 사용
             if hasattr(self, 'current_marine_names') and self.current_marine_names:
                 names_list = self.current_marine_names
                 context = getattr(self, 'current_marine_context', None)
-                print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
-                # 사용 후 초기화하지 않음 (재사용 가능하도록)
+                is_file_data = True
+                print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
         elif tab_name == "microbe":
             # 미생물 탭: 파일 데이터 우선 사용
             if hasattr(self, 'current_microbe_names') and self.current_microbe_names:
                 names_list = self.current_microbe_names
                 context = getattr(self, 'current_microbe_context', None)
-                print(f"[Debug] 미생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
-                # 사용 후 초기화하지 않음 (재사용 가능하도록)
+                is_file_data = True
+                print(f"[Debug] 미생물 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
         elif tab_name == "col":
             # COL 탭: 파일 데이터 우선 사용
             if hasattr(self, 'current_col_names') and self.current_col_names:
                 names_list = self.current_col_names
                 context = getattr(self, 'current_col_context', None)
-                print(f"[Debug] COL 탭: 파일에서 로드된 {len(names_list)}개 학명 사용")
-                # 사용 후 초기화하지 않음 (재사용 가능하도록)
+                is_file_data = True
+                print(f"[Debug] COL 탭: 파일에서 로드된 {len(names_list)}개 학명 사용 (배치 처리)")
         
         # 파일 데이터가 없으면 입력 텍스트 사용
         if not names_list:
@@ -430,14 +513,24 @@ class SpeciesVerifierApp(ctk.CTk):
             
             print(f"[Debug] {tab_name} 탭: 직접 입력된 {len(names_list)}개 학명 사용")
         
+        # 실시간 vs 배치 처리 결정
+        realtime_threshold = app_config.REALTIME_PROCESSING_THRESHOLD
+        use_realtime = len(names_list) <= realtime_threshold and not is_file_data
+        
+        if use_realtime:
+            print(f"[Info] {tab_name} 탭: {len(names_list)}개 학명 실시간 처리 시작")
+        else:
+            processing_type = "파일" if is_file_data else "배치"
+            print(f"[Info] {tab_name} 탭: {len(names_list)}개 학명 {processing_type} 처리 시작")
+        
         # 탭에 따라 적절한 검증 스레드 시작
         if tab_name == "marine":
-            self._start_verification_thread(names_list)
+            self._start_verification_thread(names_list, use_realtime=use_realtime)
         elif tab_name == "microbe":
             # LPSN 탭은 context도 전달
-            self._start_microbe_verification_thread(names_list, context=context)
+            self._start_microbe_verification_thread(names_list, context=context, use_realtime=use_realtime)
         elif tab_name == "col":
-            self._start_col_verification_thread(names_list)
+            self._start_col_verification_thread(names_list, use_realtime=use_realtime)
     
     # --- 해양생물 탭 콜백 함수 ---
     def _marine_search(self, input_text: str, tab_name: str = "marine"):
@@ -503,7 +596,7 @@ class SpeciesVerifierApp(ctk.CTk):
             self.status_bar.set_cancel_command(self._cancel_operation)
         # 취소 버튼 설정 완료
     
-    def _start_col_verification_thread(self, verification_list):
+    def _start_col_verification_thread(self, verification_list, use_realtime: bool = False):
         # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
         self.current_file_item_count = 0
         self.marine_file_item_count = 0
@@ -521,18 +614,19 @@ class SpeciesVerifierApp(ctk.CTk):
         self.marine_total_items = 0
         self.microbe_total_items = 0
         
-        # 진행 UI 표시 (취소 버튼 활성화 포함)
-        self._show_progress_ui("COL 검증 준비 중...")
+        # 처리 방식에 따른 진행 UI 표시
+        processing_type = "실시간" if use_realtime else "배치"
+        self._show_progress_ui(f"COL {processing_type} 검증 준비 중...")
         self._set_ui_state("disabled")  # UI 비활성화
         
         # COL 글로벌 API를 이용한 검증 스레드 시작
         import threading
-        thread = threading.Thread(target=self._perform_col_verification, args=(verification_list,))
+        thread = threading.Thread(target=self._perform_col_verification, args=(verification_list, use_realtime))
         thread.daemon = True
         thread.start()
 
-    def _perform_col_verification(self, verification_list):
-        """COL 글로벌 API를 이용한 검증 (백그라운드) - 배치 처리 적용"""
+    def _perform_col_verification(self, verification_list, use_realtime: bool = False):
+        """COL 글로벌 API를 이용한 검증 (백그라운드) - 실시간/배치 처리 구분"""
         from species_verifier.core.col_api import verify_col_species
         import time
         
@@ -953,7 +1047,7 @@ class SpeciesVerifierApp(ctk.CTk):
     
     # --- 공통 유틸리티 함수 ---
     
-    def _start_verification_thread(self, verification_list):
+    def _start_verification_thread(self, verification_list, use_realtime: bool = False):
         # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
         self.current_file_item_count = 0
         self.marine_file_item_count = 0
@@ -969,15 +1063,16 @@ class SpeciesVerifierApp(ctk.CTk):
         self.microbe_total_items = 0
         self.col_total_items = 0
         
-        # 진행 UI 표시
-        self._show_progress_ui("검증 준비 중...")
+        # 처리 방식에 따른 진행 UI 표시
+        processing_type = "실시간" if use_realtime else "배치"
+        self._show_progress_ui(f"해양생물 {processing_type} 검증 준비 중...")
         self._set_ui_state("disabled")
         self.is_verifying = True # 검증 시작 플래그 설정
         
         # 검증 스레드 시작
         threading.Thread(
             target=self._perform_verification,
-            args=(verification_list,),
+            args=(verification_list, use_realtime),
             daemon=True
         ).start()
 
@@ -989,8 +1084,8 @@ class SpeciesVerifierApp(ctk.CTk):
         if self.marine_tab:
              self.marine_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
-    def _perform_verification(self, verification_list_input):
-        """해양생물 검증 수행 (백그라운드 스레드에서 실행) - 배치 처리 적용"""
+    def _perform_verification(self, verification_list_input, use_realtime: bool = False):
+        """해양생물 검증 수행 (백그라운드 스레드에서 실행) - 실시간/배치 처리 구분"""
         try:
             # 취소 플래그 초기화
             self.is_cancelled = False
@@ -1003,87 +1098,118 @@ class SpeciesVerifierApp(ctk.CTk):
             self.total_verification_items = len(verification_list_input)
             print(f"[Debug Marine] 전체 해양생물 항목 수 설정: {self.total_verification_items}")
             
-            # 배치 처리 설정
+            # 설정 로드
             from species_verifier.config import app_config, api_config
-            BATCH_SIZE = app_config.BATCH_SIZE  # 100개
-            BATCH_DELAY = api_config.BATCH_DELAY  # 2.0초
             
-            total_items = len(verification_list_input)
-            total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
-            
-            print(f"[Info Marine] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
-            print(f"[Info Marine] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
-            
-            # 결과 콜백 함수 정의
-            def result_callback_wrapper(result, tab_type):
+            # 실시간 처리 vs 배치 처리
+            if use_realtime:
+                # 실시간 처리 - 배치 지연 없이 빠르게 처리
+                print(f"[Info Marine] 실시간 처리 시작: 총 {len(verification_list_input)}개 항목")
+                
+                # 결과 콜백 함수 정의
+                def result_callback_wrapper(result, tab_type):
+                    if not self.is_cancelled:
+                        self.result_queue.put((result, tab_type))
+                        print(f"[Debug] 해양생물 실시간 결과 추가: {result.get('input_name', '')}")
+                
+                # 실시간 처리 - 개별 항목 처리
+                from species_verifier.gui.bridge import perform_verification
+                batch_results = perform_verification(
+                    verification_list_input,
+                    lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                        p, curr, len(verification_list_input)
+                    )),
+                    lambda msg: self.after(0, lambda: self._update_progress_label(f"실시간: {msg}")),
+                    result_callback=result_callback_wrapper,
+                    check_cancelled=check_cancelled,
+                    realtime_mode=True  # 실시간 모드 플래그
+                )
+                
+                print(f"[Info Marine] 실시간 처리 완료: {len(verification_list_input)}개 항목")
+                
+            else:
+                # 배치 처리 - 기존 방식
+                BATCH_SIZE = app_config.BATCH_SIZE  # 100개
+                BATCH_DELAY = api_config.BATCH_DELAY  # 3.0초
+                
+                total_items = len(verification_list_input)
+                total_batches = (total_items + BATCH_SIZE - 1) // BATCH_SIZE  # 올림 나눗셈
+                
+                print(f"[Info Marine] 배치 처리 시작: 총 {total_items}개 항목을 {total_batches}개 배치로 처리")
+                print(f"[Info Marine] 배치 크기: {BATCH_SIZE}개, 배치간 지연: {BATCH_DELAY}초")
+                
+                # 결과 콜백 함수 정의
+                def result_callback_wrapper(result, tab_type):
+                    if not self.is_cancelled:
+                        self.result_queue.put((result, tab_type))
+                        print(f"[Debug] 해양생물 배치 결과 추가: {result.get('input_name', '')}")
+                    else:
+                        print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
+                
+                # 배치별 처리
+                processed_items = 0
+                for batch_idx in range(total_batches):
+                    # 취소 확인
+                    if self.is_cancelled:
+                        print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
+                        break
+                    
+                    # 현재 배치 생성
+                    start_idx = batch_idx * BATCH_SIZE
+                    end_idx = min(start_idx + BATCH_SIZE, total_items)
+                    current_batch = verification_list_input[start_idx:end_idx]
+                    
+                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
+                    
+                    # 배치 진행률 업데이트
+                    batch_progress = batch_idx / total_batches
+                    self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
+                    self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
+                    
+                    # 현재 배치 처리
+                    try:
+                        from species_verifier.gui.bridge import perform_verification
+                        batch_results = perform_verification(
+                            current_batch,
+                            lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
+                                batch_progress + (p / total_batches), 
+                                processed_items + (curr or 0), 
+                                total_items
+                            )),
+                            lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
+                            result_callback=result_callback_wrapper,
+                            check_cancelled=check_cancelled
+                        )
+                        
+                        processed_items += len(current_batch)
+                        print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
+                        
+                    except Exception as e:
+                        print(f"[Error Marine] 배치 {batch_idx + 1} 처리 중 오류: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    
+                    # 마지막 배치가 아니면 배치간 지연 시간 적용
+                    if batch_idx < total_batches - 1 and not self.is_cancelled:
+                        print(f"[Info Marine] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
+                        time.sleep(BATCH_DELAY)
+                    
+                    # 취소 확인 (지연 후)
+                    if self.is_cancelled:
+                        print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
+                        break
+                
                 if not self.is_cancelled:
-                    self.result_queue.put((result, tab_type))
-                    print(f"[Debug] 해양생물 결과를 해양생물 탭에 추가: {result.get('input_name', '')}")
+                    print(f"[Info Marine] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
                 else:
-                    print(f"[Debug] 취소되어 결과 무시: {result.get('input_name', '')}")
-            
-            # 배치별 처리
-            processed_items = 0
-            for batch_idx in range(total_batches):
-                # 취소 확인
-                if self.is_cancelled:
-                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 전 취소 감지")
-                    break
-                
-                # 현재 배치 생성
-                start_idx = batch_idx * BATCH_SIZE
-                end_idx = min(start_idx + BATCH_SIZE, total_items)
-                current_batch = verification_list_input[start_idx:end_idx]
-                
-                print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 시작 ({start_idx + 1}-{end_idx})")
-                
-                # 배치 진행률 업데이트
-                batch_progress = batch_idx / total_batches
-                self.after(0, lambda p=batch_progress: self.update_progress(p, batch_idx * BATCH_SIZE, total_items))
-                self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches} 처리 중..."))
-                
-                # 현재 배치 처리
-                try:
-                    from species_verifier.gui.bridge import perform_verification
-                    batch_results = perform_verification(
-                        current_batch,
-                        lambda p, curr=None, total=None: self.after(0, lambda: self.update_progress(
-                            batch_progress + (p / total_batches), 
-                            processed_items + (curr or 0), 
-                            total_items
-                        )),
-                        lambda msg: self.after(0, lambda: self._update_progress_label(f"배치 {batch_idx + 1}/{total_batches}: {msg}")),
-                        result_callback=result_callback_wrapper,
-                        check_cancelled=check_cancelled
-                    )
-                    
-                    processed_items += len(current_batch)
-                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 완료, 처리된 항목: {processed_items}/{total_items}")
-                    
-                except Exception as e:
-                    print(f"[Error Marine] 배치 {batch_idx + 1} 처리 중 오류: {e}")
-                    import traceback
-                    traceback.print_exc()
-                
-                # 마지막 배치가 아니면 배치간 지연 시간 적용
-                if batch_idx < total_batches - 1 and not self.is_cancelled:
-                    print(f"[Info Marine] 배치간 지연 시간 적용: {BATCH_DELAY}초 대기")
-                    time.sleep(BATCH_DELAY)
-                
-                # 취소 확인 (지연 후)
-                if self.is_cancelled:
-                    print(f"[Info Marine] 배치 {batch_idx + 1}/{total_batches} 처리 후 취소 감지")
-                    break
+                    print(f"[Info Marine] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
             if not self.is_cancelled:
-                print(f"[Info Marine] 모든 배치 처리 완료: {processed_items}/{total_items}개 항목 처리됨")
                 # 검증 완료 후 파일 캐시 삭제
                 self.after(0, lambda: self._clear_file_cache("marine"))
-            else:
-                print(f"[Info Marine] 배치 처리 취소됨: {processed_items}/{total_items}개 항목 처리됨")
             
         except Exception as e:
-            print(f"[Error _perform_verification] Error during batch verification: {e}")
+            print(f"[Error _perform_verification] Error during verification: {e}")
             import traceback
             traceback.print_exc()
         finally:
@@ -1095,14 +1221,15 @@ class SpeciesVerifierApp(ctk.CTk):
             if self.marine_tab:
                 self.after(0, lambda: self.marine_tab.focus_entry())
 
-    def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None):
+    def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False):
         """미생물 검증 스레드 시작"""
         # 진행 UI 표시 (초기 메시지 개선)
-        initial_msg = "미생물 검증 준비 중..."
+        processing_type = "실시간" if use_realtime else "배치"
+        initial_msg = f"미생물 {processing_type} 검증 준비 중..."
         if isinstance(context, str): # 파일 경로인 경우
-            initial_msg = f"파일 '{os.path.basename(context)}' 검증 준비 중..."
+            initial_msg = f"파일 '{os.path.basename(context)}' {processing_type} 검증 준비 중..."
         elif isinstance(context, list): # 직접 입력인 경우
-            initial_msg = f"입력된 {len(context)}개 학명 검증 중..."
+            initial_msg = f"입력된 {len(context)}개 학명 {processing_type} 검증 중..."
             
         self._show_progress_ui(initial_msg)
         self._set_ui_state("disabled")
@@ -1111,7 +1238,7 @@ class SpeciesVerifierApp(ctk.CTk):
         # 검증 스레드 시작 (context 전달)
         threading.Thread(
             target=self._perform_microbe_verification,
-            args=(microbe_names_list, context), # context 전달
+            args=(microbe_names_list, context, use_realtime), # use_realtime 추가
             daemon=True
         ).start()
 
@@ -1123,8 +1250,8 @@ class SpeciesVerifierApp(ctk.CTk):
         if self.microbe_tab:
             self.microbe_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
     
-    def _perform_microbe_verification(self, microbe_names_list, context: Union[List[str], str, None] = None):
-        """미생물 검증 수행 (백그라운드 스레드에서 실행) - 배치 처리 적용"""
+    def _perform_microbe_verification(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False):
+        """미생물 검증 수행 (백그라운드 스레드에서 실행) - 실시간/배치 처리 구분"""
         try:
             # 취소 플래그 초기화 및 취소 로깅 플래그 초기화
             self.is_cancelled = False
@@ -1476,6 +1603,9 @@ class SpeciesVerifierApp(ctk.CTk):
                 self.marine_tab.set_selected_file(None)
             if hasattr(self, 'microbe_tab'):
                 self.microbe_tab.set_selected_file(None)
+        
+        # 검증 진행 중에도 탭 색상 유지
+        self.after(20, self._reapply_tab_colors)
     
     def _set_ui_state(self, state: str):
         """UI 상태 설정"""
@@ -1498,6 +1628,8 @@ class SpeciesVerifierApp(ctk.CTk):
         # 탭 뷰 자체
         if hasattr(self, 'tab_view'):
             self.tab_view.configure(state=enable_state)
+            # 탭 상태 변경 후 색상 다시 적용 (검증 시작/완료 시 색상 초기화 방지)
+            self.after(10, self._reapply_tab_colors)
 
         # --- 상태 바 업데이트 ---
         if is_idle:
@@ -1572,51 +1704,86 @@ class SpeciesVerifierApp(ctk.CTk):
             self.after(delay, self._process_result_queue)
 
     def _cancel_operation(self):
-        """작업 취소 - 모든 취소 기능을 이 메서드로 통합"""
-        # 이미 취소 중인 경우 중복 실행 방지
-        if getattr(self, '_is_cancelling', False):
-            return
+        """작업 취소 - 스레드 안전하게 개선된 버전"""
+        with self._cancel_lock:
+            # 이미 취소 중인 경우 중복 실행 방지
+            if self._is_cancelling:
+                print("[Debug] 이미 취소 작업이 진행 중입니다.")
+                return
                 
-        try:
-            self._is_cancelling = True
-            # 취소 플래그 설정 및 UI 복원
-            self.is_cancelled = True  # 취소 플래그 설정
-            print("[Debug] 작업 취소 요청됨")
-            
-            # 취소 시 모든 탭의 파일 캐시 삭제
-            self._clear_file_cache("marine")
-            self._clear_file_cache("microbe")
-            self._clear_file_cache("col")
-            print("[Debug] 취소 시 모든 파일 캐시 삭제 완료")
-            
-            # 취소 버튼 비활성화 (연속 클릭 방지)
-            if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'cancel_button'):
-                self.status_bar.cancel_button.configure(state="disabled")
-                self.status_bar.set_status("검증 취소 중...")
-            
-            # 결과 큐 초기화 - 경쟁 상태를 예방하기 위해 주의해야 함
             try:
-                while not self.result_queue.empty():
-                    try:
-                        self.result_queue.get_nowait()
-                        self.result_queue.task_done()
-                    except queue.Empty:
-                        break
-                print("[Debug] 결과 큐 초기화 완료")
+                self._is_cancelling = True
+                print("[Debug] 작업 취소 요청됨 - 스레드 안전 처리 시작")
+                
+                # 취소 플래그 설정
+                self.is_cancelled = True
+                
+                # 취소 버튼 즉시 비활성화 (연속 클릭 방지)
+                if hasattr(self, 'status_bar') and hasattr(self.status_bar, 'cancel_button'):
+                    self.status_bar.cancel_button.configure(state="disabled")
+                    self.status_bar.set_status("검증 취소 중...")
+                
+                # 취소 시 모든 탭의 파일 캐시 삭제
+                self._clear_file_cache("marine")
+                self._clear_file_cache("microbe")
+                self._clear_file_cache("col")
+                print("[Debug] 취소 시 모든 파일 캐시 삭제 완료")
+                
+                # 결과 큐 안전하게 정리
+                self._safely_clear_result_queue()
+                
+                # UI 상태 복원을 위한 스케줄링
+                self.after(100, self._complete_cancellation)
+                
             except Exception as e:
-                print(f"[Error] Error processing result queue: {e}")
+                print(f"[Error] 작업 취소 중 오류 발생: {e}")
                 traceback.print_exc()
             finally:
-                # 큐 처리 함수 다시 스케줄링
-                # 큐가 비어있거나 취소된 경우 더 빨리 처리
-                delay = 20 if self.result_queue.empty() or (hasattr(self, 'is_cancelled') and self.is_cancelled) else 50
-                self.after(delay, self._process_result_queue)
+                # 취소 플래그는 완료 후에 재설정
+                pass
+
+    def _safely_clear_result_queue(self):
+        """결과 큐를 안전하게 정리"""
+        try:
+            cleared_count = 0
+            while not self.result_queue.empty():
+                try:
+                    self.result_queue.get_nowait()
+                    self.result_queue.task_done()
+                    cleared_count += 1
+                except queue.Empty:
+                    break
+            print(f"[Debug] 결과 큐 안전 정리 완료: {cleared_count}개 항목 제거")
         except Exception as e:
-            print(f"[Error] 작업 취소 중 오류 발생: {e}")
-            traceback.print_exc()
+            print(f"[Error] 결과 큐 정리 중 오류: {e}")
+
+    def _complete_cancellation(self):
+        """취소 작업 완료 처리"""
+        try:
+            with self._verification_lock:
+                # UI 상태 복원
+                self._set_ui_state("normal")
+                self.is_verifying = False
+                
+                # 상태 표시 업데이트
+                self._update_progress_label("검증 취소 완료")
+                
+                # 입력 필드 초기화
+                if hasattr(self, 'marine_tab') and hasattr(self.marine_tab, 'entry'):
+                    self.marine_tab.entry.delete("0.0", tk.END)
+                if hasattr(self, 'microbe_tab') and hasattr(self.microbe_tab, 'entry'):
+                    self.microbe_tab.entry.delete("0.0", tk.END)
+                if hasattr(self, 'col_tab') and hasattr(self.col_tab, 'entry'):
+                    self.col_tab.entry.delete("0.0", tk.END)
+                
+                print("[Debug] 취소 작업 완료 - UI 상태 복원됨")
+                
+        except Exception as e:
+            print(f"[Error] 취소 완료 처리 중 오류: {e}")
         finally:
-            # 취소 작업이 완료되었으므로 플래그 재설정
-            self._is_cancelling = False
+            # 취소 상태 플래그 재설정
+            with self._cancel_lock:
+                self._is_cancelling = False
 
     def show_centered_message(self, msg_type: str, title: str, message: str):
         """중앙 메시지 표시"""
@@ -2183,11 +2350,14 @@ class SpeciesVerifierApp(ctk.CTk):
             # 탭 폰트 설정
             tab_font = ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold")
             
-            # 탭뷰 전체 색상 설정
+            # 탭뷰 전체 색상 설정 (강제 업데이트)
             self._apply_tab_colors_to_segmented_button(tab_font)
             
-            # 개별 탭 버튼 색상 설정
+            # 개별 탭 버튼 색상 설정 (강제 업데이트)
             self._apply_tab_colors_to_individual_buttons(tab_font)
+            
+            # 강제로 탭뷰 업데이트
+            self.tab_view.update_idletasks()
             
             print("[Debug] 탭 색상 다시 적용 완료")
         except Exception as e:
@@ -2209,18 +2379,54 @@ class SpeciesVerifierApp(ctk.CTk):
         )
 
     def _apply_tab_colors_to_individual_buttons(self, tab_font):
-        """개별 탭 버튼에 공통 탭 색상 적용 (지원되는 속성만)"""
-        for button in self.tab_view._segmented_button._buttons_dict.values():
-            button.configure(
-                font=tab_font,
-                height=45,
-                corner_radius=6,  # 둥근 모서리 줄임
-                border_width=0,  # 테두리 제거
-                # 개별 버튼에서는 selected_color 등의 속성을 지원하지 않음
-                # 텍스트 색상만 설정 가능
-                text_color=self.TAB_COLORS['text_color'],  # 활성 탭 텍스트 색상
-                text_color_disabled=self.TAB_COLORS['text_color_disabled']  # 비활성 탭 텍스트 색상
-            )
+        """개별 탭 버튼에 공통 탭 색상 적용 (강제 업데이트)"""
+        try:
+            current_tab = self.tab_view.get()  # 현재 활성 탭 이름
+            
+            for tab_name, button in self.tab_view._segmented_button._buttons_dict.items():
+                is_selected = (tab_name == current_tab)
+                
+                # 기본 속성 설정
+                button.configure(
+                    font=tab_font,
+                    height=45,
+                    corner_radius=6,
+                    border_width=0
+                )
+                
+                # 활성/비활성 상태에 따른 색상 설정
+                if is_selected:
+                    # 활성 탭 색상 강제 적용
+                    button.configure(
+                        fg_color=self.TAB_COLORS['selected_color'],
+                        hover_color=self.TAB_COLORS['selected_hover_color'],
+                        text_color=self.TAB_COLORS['text_color']
+                    )
+                else:
+                    # 비활성 탭 색상 강제 적용
+                    button.configure(
+                        fg_color=self.TAB_COLORS['unselected_color'],
+                        hover_color=self.TAB_COLORS['unselected_hover_color'],
+                        text_color=self.TAB_COLORS['text_color_disabled']
+                    )
+                
+                # 버튼 업데이트 강제 실행
+                button.update_idletasks()
+                
+        except Exception as e:
+            print(f"[Error] 개별 탭 버튼 색상 적용 중 오류: {e}")
+            # 기본 방법으로 폴백
+            for button in self.tab_view._segmented_button._buttons_dict.values():
+                try:
+                    button.configure(
+                        font=tab_font,
+                        height=45,
+                        corner_radius=6,
+                        border_width=0,
+                        text_color=self.TAB_COLORS['text_color']
+                    )
+                except:
+                    pass
 
     # --- COL 탭 트리뷰 이벤트 핸들러 추가 ---
     def _on_col_tree_double_click(self, event):

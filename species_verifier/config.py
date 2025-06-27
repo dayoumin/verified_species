@@ -20,9 +20,10 @@ class AppConfig:
     APP_VERSION = "1.0.0"
     
     # 파일 처리 관련
-    MAX_DIRECT_INPUT_LIMIT = 20  # 직접 입력으로 처리할 수 있는 최대 항목 수
+    MAX_DIRECT_INPUT_LIMIT = 10  # 직접 입력으로 처리할 수 있는 최대 항목 수 (20 -> 10으로 감소)
+    REALTIME_PROCESSING_THRESHOLD = 10  # 실시간 처리 임계값 (이하는 실시간, 초과는 배치)
     MAX_FILE_PROCESSING_LIMIT = 3000  # 한 번에 처리할 수 있는 최대 항목 수
-    BATCH_SIZE = 100  # 배치 처리 크기 (500 -> 100으로 수정)
+    BATCH_SIZE = 100  # 배치 처리 크기 - 서버 과부하 방지를 위해 적정 수준 유지
     MAX_RESULTS_DISPLAY = 100  # 한 번에 표시할 수 있는 최대 결과 수
     DIRECT_EXPORT_THRESHOLD = 100  # 이 수치보다 많은 결과는 바로 파일로 내보내기
     
@@ -51,20 +52,21 @@ class APIConfig:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED = bool(GEMINI_API_KEY)
     
-    # API 요청 지연 시간 및 재시도 설정 (외부망 환경 최적화)
-    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "2.0"))  # 각 API 호출 사이의 지연 시간 (초) - 1.0 -> 2.0으로 증가
-    BATCH_DELAY = float(os.getenv("BATCH_DELAY", "5.0"))  # 배치간 지연 시간 (초) - 3.0 -> 5.0으로 증가
+    # API 요청 지연 시간 및 재시도 설정
+    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.0"))  # 실시간 처리용 지연 시간 (2.0 -> 1.0초로 단축)
+    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.5"))  # 실시간 처리 전용 지연 시간 (새로 추가)
+    BATCH_DELAY = float(os.getenv("BATCH_DELAY", "3.0"))  # 배치간 지연 시간 (초) - 파일 처리용 유지
     
     # 네트워크 안정성 설정 (외부망 환경을 위해 강화)
-    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))  # HTTP 요청 타임아웃 (초) - 15 -> 30으로 증가
-    MAX_RETRIES = int(os.getenv("MAX_RETRIES", "5"))  # 최대 재시도 횟수 - 3 -> 5로 증가
-    RETRY_DELAY = float(os.getenv("RETRY_DELAY", "3.0"))  # 재시도 간격 (초) - 2.0 -> 3.0으로 증가
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))  # HTTP 요청 타임아웃 (초) - 30 -> 20으로 감소 (빠른 실패)
+    MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))  # 최대 재시도 횟수 - 5 -> 3으로 감소
+    RETRY_DELAY = float(os.getenv("RETRY_DELAY", "1.5"))  # 재시도 간격 (초) - 3.0 -> 1.5으로 감소
     
     # COL API 설정
     COL_API_URL = "https://api.catalogueoflife.org"
-    COL_REQUEST_TIMEOUT = int(os.getenv("COL_REQUEST_TIMEOUT", "30"))  # COL API 타임아웃 (초) - 20 -> 30으로 증가
+    COL_REQUEST_TIMEOUT = int(os.getenv("COL_REQUEST_TIMEOUT", "20"))  # COL API 타임아웃 (초) - 30 -> 20으로 감소
     
-    # User-Agent 설정 (외부망에서 차단 방지)
+    # User-Agent 설정 (일반적인 브라우저로 위장)
     USER_AGENT = os.getenv("USER_AGENT", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     # HTTP 헤더 설정
@@ -94,7 +96,42 @@ class UIConfig:
     # 결과 표시 설정
     MAX_WIKI_SUMMARY_LENGTH = 500  # 위키 요약 최대 표시 길이
 
+# SSL/TLS 설정 정보
+SSL_CONFIG = {
+    "truststore_enabled": True,  # 기업/공공기관 네트워크 지원
+    "description": "truststore를 사용하여 OS 신뢰 저장소 기반 SSL 검증 수행"
+}
+
 # 기본 설정 인스턴스 생성
 app_config = AppConfig()
 api_config = APIConfig()
-ui_config = UIConfig() 
+ui_config = UIConfig()
+
+# 기관 네트워크 환경을 위한 추가 설정
+ENTERPRISE_CONFIG = {
+    # 네트워크 연결 최적화 설정
+    "bypass_proxy": False,  # 시스템 프록시 설정 사용
+    
+    # 다양한 브라우저 User-Agent (자연스러운 접속을 위해)
+    "fallback_user_agents": [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ],
+    
+    # 연결 안정성 강화 설정
+    "connection_pool_settings": {
+        "pool_connections": 5,  # 연결 풀 크기 감소
+        "pool_maxsize": 10,     # 최대 연결 수 감소
+        "pool_block": True      # 연결 풀이 가득 찰 때 대기
+    },
+    
+    # 재시도 전략 강화
+    "enhanced_retry": {
+        "backoff_factor": 2.0,  # 지수 백오프 계수
+        "status_forcelist": [429, 500, 502, 503, 504],  # 재시도할 HTTP 상태 코드
+        "allowed_methods": ["GET", "POST"]  # 재시도 허용 메서드
+    }
+} 

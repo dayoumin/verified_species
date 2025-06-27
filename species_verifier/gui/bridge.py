@@ -10,7 +10,7 @@ import sys  # 추가
 import os   # 추가
 import pandas as pd # 추가 (process_file 내부 import 제거 가능)
 from pathlib import Path # 추가
-import asyncio
+import asyncio  # 네트워크 비동기 처리를 위해 필요
 
 # 백업 파일 임포트 제거 - 더 이상 필요하지 않음
 # 모든 기능이 core 모듈로 이전됨
@@ -866,9 +866,11 @@ def get_wiki_summary(search_term: str) -> str:
 # process_col_file 함수는 더 이상 사용되지 않으므로 제거하였습니다.
 # 통합된 process_file 함수로 대체되었습니다.
 
-async def process_batch(names: List[str], callback: Callable[[Dict[str, Any]], None]) -> List[Dict[str, Any]]:
+# 네트워크 I/O 최적화를 위한 비동기 배치 처리 함수 (필요시 활용 가능)
+async def process_batch_async(names: List[str], callback: Callable[[Dict[str, Any]], None] = None) -> List[Dict[str, Any]]:
     """
-    학명 목록을 배치로 처리합니다.
+    학명 목록을 비동기로 배치 처리합니다.
+    네트워크 I/O가 많은 경우 성능 향상을 위해 사용할 수 있습니다.
     
     Args:
         names: 처리할 학명 목록
@@ -880,12 +882,16 @@ async def process_batch(names: List[str], callback: Callable[[Dict[str, Any]], N
     results = []
     for name in names:
         try:
-            # 여기에 API 호출 로직이 들어감 (verify_species는 예시)
-            result = await verify_species(name)  # 비동기 검증 함수 호출
+            # 실제 비동기 API 호출이 구현되면 여기서 사용
+            # result = await verify_species_async(name)  # 비동기 검증 함수 호출
+            
+            # 현재는 동기 방식 사용
+            result = {"name": name, "status": "processed"}  # 플레이스홀더
             if callback:
                 callback(result)
             results.append(result)
-            # API 호출 후 지연 시간 추가
+            
+            # API 호출 후 지연 시간 추가 (서버 과부하 방지)
             await asyncio.sleep(api_config.REQUEST_DELAY)
         except Exception as e:
             print(f"[Error] 처리 중 오류 발생: {e}")

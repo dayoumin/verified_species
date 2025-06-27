@@ -117,7 +117,7 @@ def get_default_taxonomy(microbe_name):
     # 기본 분류 제공
     return "Domain: Bacteria"
 
-def create_basic_microbe_result(input_name, valid_name, status, taxonomy, link, wiki_summary='-'):
+def create_basic_microbe_result(input_name, valid_name, status, taxonomy, link, wiki_summary='준비 중 (DeepSearch 기능 개발 예정)'):
     """기본적인 미생물 결과 딕셔너리를 생성합니다."""
     # 분류 정보가 불완전한 경우 기본 분류 정보로 대체
     if not taxonomy or taxonomy in ["조회실패", "조회 실패", "-", ""] or "실패" in taxonomy:
@@ -129,7 +129,7 @@ def create_basic_microbe_result(input_name, valid_name, status, taxonomy, link, 
         'status': status,
         'taxonomy': taxonomy,
         'lpsn_link': link,
-        'wiki_summary': wiki_summary # 위키 요약은 별도 함수에서 채워짐
+        'wiki_summary': wiki_summary # 심층분석 결과는 향후 DeepSearch 기능에서 제공
     }
 
 def is_korean(char):

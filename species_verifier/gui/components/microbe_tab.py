@@ -97,14 +97,14 @@ class MicrobeTabFrame(BaseTabFrame):
             header_frame,
             text="🦠 직접 입력",
             font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
-            text_color=("#1f538d", "#4a9eff")
+            text_color=self.COMMON_COLORS['header_text']
         ).grid(row=0, column=0, sticky="w")
 
         self.text_count_label = ctk.CTkLabel(
             header_frame,
             text="",
             font=ctk.CTkFont(family="Malgun Gothic", size=11),
-            text_color=("gray60", "gray40")
+            text_color=self.COMMON_COLORS['count_text']
         )
         self.text_count_label.grid(row=0, column=2, sticky="e")
 
@@ -118,7 +118,7 @@ class MicrobeTabFrame(BaseTabFrame):
         )
         self.entry.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
         self.entry.insert("0.0", self.initial_text)
-        self.entry.configure(text_color="gray")
+        self.entry.configure(text_color=self.COMMON_COLORS['entry_text_placeholder'])
         
         self.entry.bind("<FocusIn>", self._on_entry_focus_in)
         self.entry.bind("<FocusOut>", self._on_entry_focus_out)
@@ -140,14 +140,14 @@ class MicrobeTabFrame(BaseTabFrame):
             file_header_frame,
             text="📁 파일 입력",
             font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
-            text_color=("#1f538d", "#4a9eff")
+            text_color=self.COMMON_COLORS['header_text']
         ).grid(row=0, column=0, sticky="w")
 
         self.file_count_label = ctk.CTkLabel(
             file_header_frame,
             text="",
             font=ctk.CTkFont(family="Malgun Gothic", size=11),
-            text_color=("gray60", "gray40")
+            text_color=self.COMMON_COLORS['count_text']
         )
         self.file_count_label.grid(row=0, column=2, sticky="e")
 
@@ -178,6 +178,10 @@ class MicrobeTabFrame(BaseTabFrame):
             height=35,
             font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),
             corner_radius=6,
+            fg_color=self.COMMON_COLORS['button_primary'],
+            hover_color=self.COMMON_COLORS['button_primary_hover'],
+            text_color=self.COMMON_COLORS['button_text'],
+            text_color_disabled=self.COMMON_COLORS['button_text_disabled'],
             command=self._on_file_browse_click
         )
         self.file_browse_button.grid(row=0, column=0, padx=(0, 5))
@@ -189,8 +193,10 @@ class MicrobeTabFrame(BaseTabFrame):
             height=35,
             font=ctk.CTkFont(family="Malgun Gothic", size=12, weight="bold"),
             corner_radius=6,
-            fg_color=("gray70", "gray30"),
-            hover_color=("gray60", "gray40"),
+            fg_color=self.COMMON_COLORS['button_secondary'],
+            hover_color=self.COMMON_COLORS['button_secondary_hover'],
+            text_color=self.COMMON_COLORS['button_text'],
+            text_color_disabled=self.COMMON_COLORS['button_text_disabled'],
             command=self._on_file_clear_click
         )
         self.file_clear_button.grid(row=0, column=1)
@@ -205,8 +211,10 @@ class MicrobeTabFrame(BaseTabFrame):
             width=200,
             height=45,
             corner_radius=8,
-            fg_color=("#1f538d", "#4a9eff"),
-            hover_color=("#174a7a", "#3d8ae6"),
+            fg_color=self.COMMON_COLORS['button_primary'],
+            hover_color=self.COMMON_COLORS['button_primary_hover'],
+            text_color=self.COMMON_COLORS['button_text'],
+            text_color_disabled=self.COMMON_COLORS['button_text_disabled'],
             command=self._trigger_verify_callback,
             state="disabled"
         )
@@ -236,11 +244,11 @@ class MicrobeTabFrame(BaseTabFrame):
         if self.text_entry_count > self.max_direct_input_limit:
             text_count_str = f"학명 개수 {self.text_entry_count}개 (최대 {self.max_direct_input_limit}개)"
             if hasattr(self, 'text_count_label') and self.text_count_label:
-                self.text_count_label.configure(text=text_count_str, text_color=("red", "red"))
+                self.text_count_label.configure(text=text_count_str, text_color=self.COMMON_COLORS['count_warning'])
             is_text_valid = False  # 개수 초과로 입력 무효화
         else:
             if hasattr(self, 'text_count_label') and self.text_count_label:
-                self.text_count_label.configure(text=text_count_str, text_color=("black", "white"))
+                self.text_count_label.configure(text=text_count_str, text_color=self.COMMON_COLORS['entry_text_normal'])
             is_text_valid = self.text_entry_count > 0
             
         # 파일 개수 업데이트
@@ -250,9 +258,13 @@ class MicrobeTabFrame(BaseTabFrame):
         # 4. 검증 버튼 상태 업데이트
         is_file_valid = file_count > 0
         if is_text_valid or is_file_valid:
-            self.verify_button.configure(state="normal")
+            self.verify_button.configure(state="normal", text_color=self.COMMON_COLORS['button_text'])
+            # 색상이 제대로 적용되도록 지연 후 재설정
+            self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
         else:
-            self.verify_button.configure(state="disabled")
+            self.verify_button.configure(state="disabled", text_color=self.COMMON_COLORS['button_text'])
+            # 색상이 제대로 적용되도록 지연 후 재설정
+            self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
 
     def _calculate_file_entries(self, file_path: str) -> int:
         """주어진 파일 경로에서 항목 개수를 추정합니다. (첫 번째 열 기준)"""
@@ -262,7 +274,7 @@ class MicrobeTabFrame(BaseTabFrame):
         """입력 필드 포커스인 이벤트 처리"""
         if self.entry.get("0.0", "end-1c") == self.initial_text:
             self.entry.delete("0.0", tk.END)
-            self.entry.configure(text_color=("black", "white"))
+            self.entry.configure(text_color=self.COMMON_COLORS['entry_text_normal'])
         self._update_input_count()
 
     def _on_entry_focus_out(self, event=None):
@@ -271,7 +283,7 @@ class MicrobeTabFrame(BaseTabFrame):
         if not current_text.strip():
             self.entry.delete("0.0", tk.END)
             self.entry.insert("0.0", self.initial_text)
-            self.entry.configure(text_color="gray")
+            self.entry.configure(text_color=self.COMMON_COLORS['entry_text_placeholder'])
         self._update_input_count()
     
     def _on_file_browse_click(self):
@@ -305,9 +317,13 @@ class MicrobeTabFrame(BaseTabFrame):
         is_file_valid = file_input and os.path.exists(file_input)
 
         if is_text_valid or is_file_valid:
-            self.verify_button.configure(state="normal")
+            self.verify_button.configure(state="normal", text_color=self.COMMON_COLORS['button_text'])
+            # 색상이 제대로 적용되도록 지연 후 재설정
+            self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
         else:
-            self.verify_button.configure(state="disabled")
+            self.verify_button.configure(state="disabled", text_color=self.COMMON_COLORS['button_text'])
+            # 색상이 제대로 적용되도록 지연 후 재설정
+            self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
 
     def set_input_state(self, state: str):
         """탭 내 입력 관련 위젯들의 상태를 설정합니다."""
@@ -328,7 +344,9 @@ class MicrobeTabFrame(BaseTabFrame):
         # 세부적인 활성화는 _update_verify_button_state에서 관리
         if self.verify_button:
             if state == tk.DISABLED:
-                self.verify_button.configure(state=tk.DISABLED)
+                self.verify_button.configure(state=tk.DISABLED, text_color=self.COMMON_COLORS['button_text'])
+                # 색상이 제대로 적용되도록 지연 후 재설정
+                self.after(1, lambda: self.verify_button.configure(text_color=self.COMMON_COLORS['button_text']))
             else:
                 # normal 상태일 때는 _update_verify_button_state가 실제 상태 결정
                 self._update_verify_button_state()

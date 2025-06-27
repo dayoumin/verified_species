@@ -5,6 +5,7 @@ import time
 import os
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Union, Tuple, Optional, Callable
+import urllib3
 
 # 설정 로드 (core 모듈 내에서도 필요할 수 있음)
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env')) # 프로젝트 루트의 .env 로드
@@ -13,13 +14,13 @@ try:
     from species_verifier.config import api_config
     WORMS_BASE_URL = api_config.WORMS_API_URL
     REQUEST_TIMEOUT = api_config.REQUEST_TIMEOUT
-    API_DELAY = api_config.REQUEST_DELAY
+    API_DELAY = api_config.REQUEST_DELAY  # 설정파일의 지연시간 사용 (서버 과부하 방지)
     DEFAULT_HEADERS = api_config.DEFAULT_HEADERS
 except ImportError:
     # 설정 파일이 없는 경우 기본값 사용
     WORMS_BASE_URL = os.getenv("WORMS_BASE_URL", "https://www.marinespecies.org/rest")
-    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 30))
-    API_DELAY = float(os.getenv("API_DELAY", 0.5))
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 30))  # 원래 타임아웃 유지
+    API_DELAY = float(os.getenv("API_DELAY", 2.0))  # 서버 과부하 방지를 위한 적절한 지연
     DEFAULT_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 
 def get_aphia_id(scientific_name: str, check_cancelled: Optional[Callable[[], bool]] = None) -> Union[int, Dict[str, str]]:
@@ -34,7 +35,30 @@ def get_aphia_id(scientific_name: str, check_cancelled: Optional[Callable[[], bo
         encoded_name = requests.utils.quote(scientific_name)
         url = f"{WORMS_BASE_URL}/AphiaIDByName/{encoded_name}?marine_only=false"
         print(f"[Debug WoRMS API] Requesting AphiaID: {url}") # 요청 URL 로그 추가
-        response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
+        
+        # SSL 우회 방식으로 시도
+        ssl_configs = [{'verify': True}, {'verify': False}]
+        response = None
+        
+        for ssl_config in ssl_configs:
+            try:
+                if not ssl_config['verify']:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT, **ssl_config)
+                response.raise_for_status()
+                break  # 성공하면 루프 탈출
+            except requests.exceptions.SSLError:
+                if ssl_config['verify']:
+                    continue  # SSL 검증 실패시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+            except Exception:
+                if ssl_config['verify']:
+                    continue  # 기타 오류시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+        
         print(f"[Debug WoRMS API] Response Status (AphiaID for '{scientific_name}'): {response.status_code}") # 상태 코드 로그 추가
         # print(f"[Debug WoRMS API] Response Content (AphiaID for '{scientific_name}'): {response.text[:100]}...") # 내용 로그 (필요시 주석 해제)
         
@@ -109,7 +133,30 @@ def get_aphia_record(aphia_id: int, check_cancelled: Optional[Callable[[], bool]
         time.sleep(API_DELAY)
         url = f"{WORMS_BASE_URL}/AphiaRecordByAphiaID/{aphia_id}"
         print(f"[Debug WoRMS API] Requesting AphiaRecord: {url}") # 요청 URL 로그 추가
-        response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
+        
+        # SSL 우회 방식으로 시도
+        ssl_configs = [{'verify': True}, {'verify': False}]
+        response = None
+        
+        for ssl_config in ssl_configs:
+            try:
+                if not ssl_config['verify']:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT, **ssl_config)
+                response.raise_for_status()
+                break  # 성공하면 루프 탈출
+            except requests.exceptions.SSLError:
+                if ssl_config['verify']:
+                    continue  # SSL 검증 실패시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+            except Exception:
+                if ssl_config['verify']:
+                    continue  # 기타 오류시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+        
         print(f"[Debug WoRMS API] Response Status (AphiaRecord for {aphia_id}): {response.status_code}") # 상태 코드 로그 추가
         # print(f"[Debug WoRMS API] Response Content (AphiaRecord for {aphia_id}): {response.text[:100]}...") # 내용 로그 (필요시 주석 해제)
 

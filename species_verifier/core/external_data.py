@@ -1,13 +1,50 @@
 import wikipediaapi
+import requests
+import urllib3
 from .gemini_api import format_worms_result_with_gemini
 
 def get_wikipedia_summary(scientific_name, lang='en'):
     """위키피디아에서 학명에 대한 요약 정보를 가져옵니다."""
-    wiki = wikipediaapi.Wikipedia(lang)
-    page = wiki.page(scientific_name)
-    if page.exists():
-        return page.summary
-    return None
+    try:
+        # SSL 우회 방식으로 위키피디아 API 사용
+        session = requests.Session()
+        ssl_configs = [{'verify': True}, {'verify': False}]
+        
+        for ssl_config in ssl_configs:
+            try:
+                if not ssl_config['verify']:
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                # wikipediaapi에 SSL 우회 세션 적용
+                wiki = wikipediaapi.Wikipedia(
+                    language=lang,
+                    user_agent='SpeciesVerifier/1.0'
+                )
+                
+                # 세션 설정 적용
+                if hasattr(wiki, 'session'):
+                    for key, value in ssl_config.items():
+                        setattr(wiki.session, key, value)
+                
+                page = wiki.page(scientific_name)
+                if page.exists():
+                    return page.summary
+                return None
+                
+            except requests.exceptions.SSLError:
+                if ssl_config['verify']:
+                    continue  # SSL 검증 실패시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+            except Exception:
+                if ssl_config['verify']:
+                    continue  # 기타 오류시 다음 설정으로 시도
+                else:
+                    raise  # SSL 우회도 실패하면 예외 발생
+                    
+    except Exception as e:
+        print(f"[Error Wikipedia] SSL 오류로 인한 Wikipedia 접근 실패: {e}")
+        return None
 
 def enrich_with_wikipedia(species_data):
     """Gemini를 사용해 위키피디아 정보를 한국어로 요약하여 추가합니다."""

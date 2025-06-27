@@ -50,7 +50,7 @@ class MicrobeVerifier:
             self.status_update_callback(message)
     
     def create_basic_result(self, input_name: str, valid_name: str = '-', status: str = '정보 없음', 
-                              taxonomy: str = '-', link: str = '-', wiki_summary: str = '정보 없음', 
+                              taxonomy: str = '-', link: str = '-', wiki_summary: str = '준비 중 (DeepSearch 기능 개발 예정)', 
                               is_microbe: bool = False) -> Dict[str, Any]:
         """기본 결과 딕셔너리 생성"""
         # 학명이 유효하지 않거나 검증 실패 상태인 경우 is_verified를 False로 설정
@@ -104,7 +104,7 @@ class MicrobeVerifier:
         lpsn_link = f"https://lpsn.dsmz.de/species/{genus_species}"
         
         return self.create_basic_result(
-            microbe_name, valid_name, mock_status, taxonomy, lpsn_link, '-'
+            microbe_name, valid_name, mock_status, taxonomy, lpsn_link, '준비 중 (DeepSearch 기능 개발 예정)'
         )
     
     def get_default_taxonomy(self, microbe_name: str) -> str:

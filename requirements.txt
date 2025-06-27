@@ -1,4 +1,6 @@
 requests
+certifi
+truststore
 customtkinter
 pillow
 pandas

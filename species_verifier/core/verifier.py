@@ -8,7 +8,7 @@ import os
 import pyworms # WoRMS 검증을 위해 필요
 from bs4 import BeautifulSoup # LPSN 스크래핑에 필요
 import traceback
-from typing import Dict, Any, List, Callable
+from typing import Dict, Any, List, Callable, Optional
 from species_verifier.config import api_config # api_config 임포트 추가
 
 # 설정 및 다른 모듈 임포트
@@ -203,32 +203,33 @@ def verify_marine_species(verification_list_input):
                 elif not is_korean_search and input_name_for_result:
                      wiki_search_term = input_name_for_result # 최후의 수단: 원본 학명 입력
 
+                # 심층분석 결과는 현재 준비 중으로 설정 (향후 DeepSearch 기능 구현 예정)
                 if wiki_search_term:
-                    print(f"[Info Verifier Core] '{wiki_search_term}' 심층분석 결과 검색 시도")
-                    result_entry['wiki_summary'] = get_wiki_summary(wiki_search_term) or '정보 없음'
+                    print(f"[Info Verifier Core] '{wiki_search_term}' 심층분석 결과: 준비 중")
+                    result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                 else:
-                    result_entry['wiki_summary'] = '정보 없음'
+                    result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
 
         else: # WoRMS 레코드를 찾지 못한 경우 (오류 포함)
             result_entry['is_verified'] = False
             if not cleaned_scientific_name or cleaned_scientific_name == '-':
                 if is_korean_search:
                      result_entry['worms_status'] = 'N/A (학명 없음)'
-                     # 국명으로 위키 검색 시도
+                     # 심층분석 결과는 현재 준비 중으로 설정
                      if korean_name:
-                           print(f"[Info Verifier Core] '{korean_name}'(학명 없음) 심층분석 결과 검색 시도")
-                           result_entry['wiki_summary'] = get_wiki_summary(korean_name) or '정보 없음'
+                           print(f"[Info Verifier Core] '{korean_name}'(학명 없음) 심층분석 결과: 준비 중")
+                           result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                      else:
-                           result_entry['wiki_summary'] = '정보 없음'
+                           result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                 else:
                      result_entry['worms_status'] = '입력 오류'
-                     result_entry['wiki_summary'] = '정보 없음'
+                     result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
             else:
                 # WoRMS 조회 실패 또는 결과 없음
                  result_entry['worms_status'] = result_entry.get('worms_status', 'WoRMS 결과 없음') # 오류 시 기존 상태 유지
-                 # WoRMS 실패 시에도 위키 검색 시도 (입력 학명 기준)
-                 print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 심층분석 결과 검색 시도")
-                 result_entry['wiki_summary'] = get_wiki_summary(cleaned_scientific_name) or '정보 없음'
+                 # 심층분석 결과는 현재 준비 중으로 설정
+                 print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 심층분석 결과: 준비 중")
+                 result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
 
         results.append(result_entry)
 
@@ -297,15 +298,80 @@ def verify_single_microbe_lpsn(microbe_name):
         print(f"[Info LPSN Core] 검색 URL: {search_url}")
         
         try:
-            # LPSN 서버 부하 방지를 위한 지연 시간 추가 (config 값 사용)
-            time.sleep(request_delay)
-            # 직접 URL 접근 시도 (config 값과 헤더 사용)
-            direct_response = requests.get(
-                direct_species_url, 
-                headers=headers,
-                timeout=request_timeout
-            )
-            direct_response.raise_for_status()  # 404 등의 오류 확인
+            # 첫 번째 요청은 지연 없이, 재시도만 지연 적용
+            
+            # 기업 네트워크 환경 대응: 이중 SSL 전략 적용
+            ssl_configs = [
+                {'verify': True},   # 표준 SSL 검증
+                {'verify': False}   # 기업 환경 대응
+            ]
+            
+            # User-Agent 목록 (브라우저 수준)
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0'
+            ]
+            
+            direct_response = None
+            for ssl_idx, ssl_config in enumerate(ssl_configs):
+                for ua_idx, user_agent in enumerate(user_agents):
+                    try:
+                        config_desc = "SSL검증" if ssl_config['verify'] else "SSL우회"
+                        print(f"[Debug LPSN Core] {config_desc} + UA{ua_idx+1} 시도")
+                        
+                        # 재시도 시에만 지연 적용 (첫 번째 시도는 즉시)
+                        if ssl_idx > 0 or ua_idx > 0:
+                            time.sleep(0.3)  # 재시도 시 짧은 지연
+                        
+                        # SSL 경고 숨기기 (기업 환경에서 일반적)
+                        if not ssl_config['verify']:
+                            import urllib3
+                            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                        
+                        # 브라우저 수준 헤더 사용
+                        enhanced_headers = {
+                            'User-Agent': user_agent,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                            'Accept-Encoding': 'gzip, deflate, br',
+                            'Connection': 'keep-alive',
+                            'Upgrade-Insecure-Requests': '1'
+                        }
+                        
+                        # 직접 URL 접근 시도
+                        direct_response = requests.get(
+                            direct_species_url, 
+                            headers=enhanced_headers,
+                            timeout=request_timeout,
+                            **ssl_config
+                        )
+                        direct_response.raise_for_status()  # 404 등의 오류 확인
+                        
+                        print(f"[Info LPSN Core] LPSN 접근 성공: {config_desc}")
+                        break  # 성공하면 탈출
+                        
+                    except requests.exceptions.SSLError:
+                        print(f"[Debug LPSN Core] SSL 오류: {config_desc}")
+                        if ssl_config['verify']:
+                            continue  # 다음 설정으로 시도
+                        else:
+                            raise
+                    except requests.exceptions.HTTPError as e:
+                        print(f"[Debug LPSN Core] HTTP 오류 {e.response.status_code}: {config_desc}")
+                        if e.response.status_code in [403, 429]:
+                            continue  # 다른 User-Agent로 시도
+                        else:
+                            raise
+                    except Exception as e:
+                        print(f"[Debug LPSN Core] 연결 오류: {config_desc} - {type(e).__name__}")
+                        continue
+                
+                if direct_response is not None:
+                    break  # 성공했으면 SSL 루프 탈출
+            
+            if direct_response is None:
+                raise Exception("모든 연결 시도 실패")
             
             # 성공적으로 페이지에 접근했다면 상세 정보 파싱
             species_detail_url = direct_species_url
@@ -465,9 +531,9 @@ def verify_single_microbe_lpsn(microbe_name):
                 'lpsn_link': species_detail_url  # 완전한 URL 저장
             })
             
-            # 위키백과 정보 추가
-            wiki_summary = get_wiki_summary(valid_name) or '-'
-            base_result['wiki_summary'] = wiki_summary
+            # 심층분석 결과는 현재 준비 중으로 설정 (향후 DeepSearch 기능 구현 예정)
+            print(f"[Info LPSN Core] '{valid_name}' 심층분석 결과: 준비 중")
+            base_result['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
         else:
             print(f"[Warning LPSN Core] 종 페이지를 찾을 수 없음: {cleaned_name}")
             base_result['is_verified'] = False
@@ -675,7 +741,7 @@ def verify_microbe_species(microbe_names_list: List[str], result_callback: Calla
                 'valid_name': microbe_name,
                 'taxonomy': get_default_taxonomy(microbe_name) if 'get_default_taxonomy' in globals() else '-',
                 'lpsn_link': f"https://lpsn.dsmz.de/species/{microbe_name.replace(' ', '-').lower()}",
-                'wiki_summary': get_wiki_summary(microbe_name, check_cancelled=check_cancelled) if 'get_wiki_summary' in globals() else '정보 없음',
+                'wiki_summary': '준비 중 (DeepSearch 기능 개발 예정)',
                 'korean_name': '-',
                 'is_microbe': True
             }
