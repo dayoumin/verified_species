@@ -285,8 +285,8 @@ class MicrobeTabFrame(BaseTabFrame):
     
     def _on_file_browse_click(self):
         """파일 찾기 버튼 클릭 시 파일 처리 콜백 호출"""
-        print("[Debug Microbe] 파일 찾기 버튼 클릭. 'on_microbe_file_browse' 콜백 트리거.")
-        self.trigger_callback("on_microbe_file_browse")
+        print("[Debug Microbe] 파일 찾기 버튼 클릭. 'on_file_browse' 콜백 트리거.")
+        self.trigger_callback("on_file_browse")
 
     def _on_file_clear_click(self):
         """파일 지우기 버튼 클릭 이벤트 처리"""
@@ -295,15 +295,15 @@ class MicrobeTabFrame(BaseTabFrame):
         self._update_input_count()
 
     def _trigger_verify_callback(self):
-        """검증 시작 버튼 클릭 시 항상 on_microbe_search 콜백 호출"""
+        """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
         print("[Debug Microbe] 검증 버튼 클릭됨")
         text_input = self.entry.get("0.0", "end-1c").strip()
         
-        # 'on_microbe_search' 콜백은 app._microbe_search를 호출합니다.
+        # 'on_search' 콜백은 app._microbe_search를 호출합니다.
         # 이 함수는 파일에서 로드된 데이터가 있는지 먼저 확인하고, 
         # 없으면 텍스트 입력을 사용합니다.
-        print("[Debug Microbe] 'on_microbe_search' 콜백 트리거")
-        self.trigger_callback("on_microbe_search", text_input)
+        print("[Debug Microbe] 'on_search' 콜백 트리거 (tab=microbe)")
+        self.trigger_callback("on_search", text_input, "microbe")
 
     def _update_verify_button_state(self, *args):
         """검증 버튼 활성화/비활성화 상태 업데이트"""
@@ -368,12 +368,14 @@ class MicrobeTabFrame(BaseTabFrame):
         """app.py에서 파일 경로와 항목 수를 설정하기 위해 호출하는 함수"""
         if file_path and os.path.exists(file_path):
             self.file_path_var.set(file_path)
-            # 파일 항목 수 계산은 app.py에서 처리 후 self.current_microbe_names에 저장되므로,
-            # 여기서는 직접 계산하지 않고 표시만 업데이트하거나, app.py에서 개수를 받아와도 됩니다.
-            # 지금은 우선 경로만 설정합니다.
+            # 파일 항목 수 계산
+            self.file_entry_count = self._calculate_file_entries(file_path)
+            print(f"[Debug Microbe] 파일에서 {self.file_entry_count}개 항목 계산됨")
         else:
             self.file_path_var.set("")
-        # self._update_input_count() # 필요 시 app.py에서 직접 호출 또는 콜백으로 처리
+            self.file_entry_count = 0
+        # 항목 수 업데이트
+        self._update_input_count()
 
     def reset_file_info(self):
         """파일 정보 초기화 - 취소 시 호출됨"""

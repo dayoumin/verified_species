@@ -371,14 +371,17 @@ class MarineTabFrame(BaseTabFrame):
         """선택된 파일 설정"""
         if file_path:
             self.file_path_var.set(file_path)
-            # 파일 항목 개수 계산
-            self._calculate_file_entries(file_path)
+            # 파일 항목 개수 계산 및 저장
+            self.file_entry_count = self._calculate_file_entries(file_path)
+            print(f"[Debug Marine] 파일에서 {self.file_entry_count}개 항목 계산됨")
         else:
             self.file_path_var.set("")
             self.file_entry_count = 0
             if hasattr(self, 'file_count_label') and self.file_count_label:
                 self.file_count_label.configure(text="")
         
+        # 항목 수 업데이트
+        self._update_input_count()
         # 검증 버튼 상태 업데이트
         self._update_verify_button_state()
         

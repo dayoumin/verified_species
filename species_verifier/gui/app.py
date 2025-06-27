@@ -452,12 +452,12 @@ class SpeciesVerifierApp(ctk.CTk):
         self.marine_tab.register_callback("on_file_browse", self._marine_file_browse)
 
         # 미생물 탭 콜백
-        self.microbe_tab.register_callback("on_microbe_search", self._microbe_search)
-        self.microbe_tab.register_callback("on_microbe_file_browse", self._microbe_file_browse)
+        self.microbe_tab.register_callback("on_search", self._microbe_search)
+        self.microbe_tab.register_callback("on_file_browse", self._microbe_file_browse)
 
         # 담수/기타(COL) 탭 콜백
         self.col_tab.register_callback("on_search", self._col_search)
-        self.col_tab.register_callback("on_col_file_browse", self._col_file_browse)
+        self.col_tab.register_callback("on_file_browse", self._col_file_browse)
 
         # 탭 변경 시 테이블 업데이트 콜백 연결
         self.tab_view.configure(command=self._on_tab_change)
