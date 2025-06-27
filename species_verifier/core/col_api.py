@@ -1,7 +1,7 @@
 import requests
 import time
 from typing import Dict, Any
-from species_verifier.config import api_config, ENTERPRISE_CONFIG
+from species_verifier.config import api_config, ENTERPRISE_CONFIG, SSL_CONFIG
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -72,7 +72,7 @@ def create_robust_session():
     return session
 
 def try_with_different_user_agents(url, params, session, timeout):
-    """브라우저와 유사한 방식으로 API 요청 (SSL 오류 해결)"""
+    """브라우저와 유사한 방식으로 API 요청 (보안 강화)"""
     logger = get_logger()
     
     # fallback_user_agents를 안전하게 접근
@@ -85,17 +85,26 @@ def try_with_different_user_agents(url, params, session, timeout):
         logger.warning(f"fallback_user_agents 설정 오류: {e}")
         user_agents = [api_config.USER_AGENT]
     
-    # SSL 설정 옵션들 (브라우저 수준)
+    # SSL 설정 가져오기 (보안 우선)
+    from species_verifier.config import SSL_CONFIG
+    
+    # SSL 설정 옵션들 (보안 우선 순서)
     ssl_configs = [
-        {'verify': True},   # 기본 SSL 검증
-        {'verify': False}   # SSL 검증 비활성화 (기업 환경 대응)
+        {'verify': True, 'description': 'SSL 검증 활성화'}   # 항상 먼저 시도
     ]
+    
+    # 기업 환경 지원이 활성화된 경우에만 SSL 우회 옵션 추가
+    if SSL_CONFIG.get("allow_insecure_fallback", False):
+        ssl_configs.append({
+            'verify': False, 
+            'description': 'SSL 검증 우회 (기업 환경 지원)'
+        })
     
     # 각 SSL 설정과 User-Agent 조합으로 시도
     for ssl_idx, ssl_config in enumerate(ssl_configs):
         for ua_idx, user_agent in enumerate(user_agents):
             try:
-                config_desc = "SSL검증" if ssl_config['verify'] else "SSL우회"
+                config_desc = ssl_config['description']
                 logger.debug(f"네트워크 요청 시도: {config_desc} + UA{ua_idx+1}")
                 
                 headers = api_config.DEFAULT_HEADERS.copy()
@@ -106,8 +115,13 @@ def try_with_different_user_agents(url, params, session, timeout):
                     delay = random.uniform(0.3, 0.8)
                     time.sleep(delay)
                 
-                # SSL 경고 숨기기 (기업 환경에서 일반적)
+                # SSL 우회 사용 시 보안 관련 처리
                 if not ssl_config['verify']:
+                    # 로깅 (투명성)
+                    if SSL_CONFIG.get("log_ssl_bypass", True):
+                        logger.warning("⚠️ SSL 검증 우회 사용 중 - 기업 환경 지원")
+                    
+                    # urllib3 경고 비활성화 (콘솔 정리용)
                     import urllib3
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
@@ -116,13 +130,21 @@ def try_with_different_user_agents(url, params, session, timeout):
                     params=params, 
                     headers=headers, 
                     timeout=timeout,
-                    **ssl_config
+                    verify=ssl_config['verify']
                 )
                 response.raise_for_status()
                 
-                logger.debug(f"API 요청 성공: {config_desc}")
+                # 성공 시 사용된 방법 로깅
+                if ssl_config['verify']:
+                    logger.debug(f"✅ 보안 연결 성공: {config_desc}")
+                else:
+                    logger.info(f"⚠️ SSL 우회로 연결 성공: {config_desc}")
+                
                 return response
                 
+            except requests.exceptions.SSLError as e:
+                logger.debug(f"SSL 오류: {config_desc} - {str(e)[:100]}...")
+                continue
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 403:
                     logger.debug(f"접근 제한: {config_desc}")
@@ -139,7 +161,7 @@ def try_with_different_user_agents(url, params, session, timeout):
                 continue
     
     # 모든 시도 실패
-    raise Exception("네트워크 연결 실패 - 모든 연결 방법 시도 후 실패")
+    raise Exception("네트워크 연결 실패 - 모든 보안 연결 방법 시도 후 실패")
 
 def verify_col_species(scientific_name: str) -> Dict[str, Any]:
     """

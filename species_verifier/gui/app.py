@@ -10,6 +10,18 @@ import ssl
 import urllib.request
 import urllib3
 
+# SSL 경고 관리 (보안 고려)
+try:
+    from species_verifier.config import SSL_CONFIG
+    if SSL_CONFIG.get("allow_insecure_fallback", False):
+        # 기업 환경 지원이 활성화된 경우에만 경고 비활성화
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        print("[Info] 🔒 기업 네트워크 환경 지원 - SSL 경고 비활성화")
+except ImportError:
+    # 설정 파일이 없는 경우 기본 동작
+    pass
+
 # 1. truststore 적용 (OS 신뢰 저장소 사용)
 try:
     import truststore
@@ -70,9 +82,6 @@ try:
     print("[Info] ✅ 기업 네트워크 최적화 세션 적용 완료")
 except Exception as e:
     print(f"[Warning] ❌ 세션 설정 실패: {e}")
-
-# 3. urllib3 경고 비활성화 (프록시 환경에서 발생하는 불필요한 경고)
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 print("[Info] 🌐 네트워크 환경 설정 완료 - Figma 수준의 연결성 제공")
 

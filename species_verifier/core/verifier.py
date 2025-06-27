@@ -34,6 +34,18 @@ except ImportError as e:
     app_config = None
     api_config = None
 
+# SSL 경고 관리 (보안 강화)
+try:
+    from species_verifier.config import SSL_CONFIG
+    if SSL_CONFIG.get("allow_insecure_fallback", False):
+        # 기업 환경 지원이 활성화된 경우에만 경고 비활성화
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        logger.info("🔒 기업 네트워크 환경 지원 - SSL 경고 비활성화")
+except ImportError:
+    # 설정 파일이 없는 경우 기본 동작
+    pass
+
 # 사용되지 않는 함수 제거됨
 
 # clean_scientific_name 함수에 check_scientific_name 별칭 추가
@@ -308,10 +320,17 @@ def verify_single_microbe_lpsn(microbe_name):
             print(f"[Debug LPSN Core] {request_delay}초 지연 적용 완료")
             
             # 기업 네트워크 환경 대응: 이중 SSL 전략 적용
+            # SSL 설정 옵션들 (보안 우선)
             ssl_configs = [
-                {'verify': True},   # 표준 SSL 검증
-                {'verify': False}   # 기업 환경 대응
+                {'verify': True, 'description': 'SSL 검증 활성화'}   # 항상 먼저 시도
             ]
+            
+            # 기업 환경 지원이 활성화된 경우에만 SSL 우회 추가
+            if SSL_CONFIG.get("allow_insecure_fallback", False):
+                ssl_configs.append({
+                    'verify': False, 
+                    'description': 'SSL 검증 우회 (기업 환경)'
+                })
             
             # User-Agent 목록 (브라우저 수준)
             user_agents = [
@@ -324,17 +343,17 @@ def verify_single_microbe_lpsn(microbe_name):
             for ssl_idx, ssl_config in enumerate(ssl_configs):
                 for ua_idx, user_agent in enumerate(user_agents):
                     try:
-                        config_desc = "SSL검증" if ssl_config['verify'] else "SSL우회"
+                        config_desc = ssl_config['description']
                         print(f"[Debug LPSN Core] {config_desc} + UA{ua_idx+1} 시도")
                         
                         # 재시도 시에만 지연 적용 (첫 번째 시도는 즉시)
                         if ssl_idx > 0 or ua_idx > 0:
                             time.sleep(0.3)  # 재시도 시 짧은 지연
                         
-                        # SSL 경고 숨기기 (기업 환경에서 일반적)
+                        # SSL 우회 사용 시 로깅 (투명성)
                         if not ssl_config['verify']:
-                            import urllib3
-                            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                            if SSL_CONFIG.get("log_ssl_bypass", True):
+                                logger.warning("⚠️ LPSN 미생물 검증 - SSL 검증 우회 사용 중")
                         
                         # 브라우저 수준 헤더 사용
                         enhanced_headers = {
@@ -355,7 +374,11 @@ def verify_single_microbe_lpsn(microbe_name):
                         )
                         direct_response.raise_for_status()  # 404 등의 오류 확인
                         
-                        print(f"[Info LPSN Core] LPSN 접근 성공: {config_desc}")
+                        # 성공 로깅
+                        if ssl_config['verify']:
+                            print(f"[Info] ✅ LPSN 보안 연결 성공: {config_desc}")
+                        else:
+                            print(f"[Info] ⚠️ LPSN SSL 우회로 연결 성공: {config_desc}")
                         break  # 성공하면 탈출
                         
                     except requests.exceptions.SSLError:

@@ -11,7 +11,7 @@ import urllib3
 # load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env')) # 프로젝트 루트의 .env 로드
 
 try:
-    from species_verifier.config import api_config
+    from species_verifier.config import api_config, SSL_CONFIG
     WORMS_BASE_URL = api_config.WORMS_API_URL
     REQUEST_TIMEOUT = api_config.REQUEST_TIMEOUT
     API_DELAY = api_config.REQUEST_DELAY  # 설정파일의 지연시간 사용 (서버 과부하 방지)
@@ -36,24 +36,52 @@ def get_aphia_id(scientific_name: str, check_cancelled: Optional[Callable[[], bo
         url = f"{WORMS_BASE_URL}/AphiaIDByName/{encoded_name}?marine_only=false"
         print(f"[Debug WoRMS API] Requesting AphiaID: {url}") # 요청 URL 로그 추가
         
-        # SSL 우회 방식으로 시도
-        ssl_configs = [{'verify': True}, {'verify': False}]
+        # 보안 강화된 SSL 처리
+        ssl_configs = [
+            {'verify': True, 'description': 'SSL 검증 활성화'}
+        ]
+        
+        # 기업 환경 지원이 활성화된 경우에만 SSL 우회 추가
+        if SSL_CONFIG.get("allow_insecure_fallback", False):
+            ssl_configs.append({
+                'verify': False, 
+                'description': 'SSL 검증 우회 (기업 환경)'
+            })
+        
         response = None
         
         for ssl_config in ssl_configs:
             try:
+                # SSL 우회 사용 시 로깅 및 경고 처리
                 if not ssl_config['verify']:
+                    if SSL_CONFIG.get("log_ssl_bypass", True):
+                        print(f"[Warning] ⚠️ WoRMS AphiaID - SSL 검증 우회 사용 중")
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
-                response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT, **ssl_config)
+                response = requests.get(
+                    url, 
+                    headers=DEFAULT_HEADERS, 
+                    timeout=REQUEST_TIMEOUT, 
+                    verify=ssl_config['verify']
+                )
                 response.raise_for_status()
+                
+                # 성공 로깅
+                if ssl_config['verify']:
+                    print(f"[Debug] ✅ WoRMS AphiaID 보안 연결 성공: {scientific_name}")
+                else:
+                    print(f"[Info] ⚠️ WoRMS AphiaID SSL 우회로 연결 성공: {scientific_name}")
+                
                 break  # 성공하면 루프 탈출
+                
             except requests.exceptions.SSLError:
+                print(f"[Debug] WoRMS SSL 오류: {ssl_config['description']}")
                 if ssl_config['verify']:
                     continue  # SSL 검증 실패시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
-            except Exception:
+            except Exception as e:
+                print(f"[Debug] WoRMS 연결 오류: {ssl_config['description']} - {type(e).__name__}")
                 if ssl_config['verify']:
                     continue  # 기타 오류시 다음 설정으로 시도
                 else:
@@ -134,24 +162,52 @@ def get_aphia_record(aphia_id: int, check_cancelled: Optional[Callable[[], bool]
         url = f"{WORMS_BASE_URL}/AphiaRecordByAphiaID/{aphia_id}"
         print(f"[Debug WoRMS API] Requesting AphiaRecord: {url}") # 요청 URL 로그 추가
         
-        # SSL 우회 방식으로 시도
-        ssl_configs = [{'verify': True}, {'verify': False}]
+        # 보안 강화된 SSL 처리
+        ssl_configs = [
+            {'verify': True, 'description': 'SSL 검증 활성화'}
+        ]
+        
+        # 기업 환경 지원이 활성화된 경우에만 SSL 우회 추가
+        if SSL_CONFIG.get("allow_insecure_fallback", False):
+            ssl_configs.append({
+                'verify': False, 
+                'description': 'SSL 검증 우회 (기업 환경)'
+            })
+        
         response = None
         
         for ssl_config in ssl_configs:
             try:
+                # SSL 우회 사용 시 로깅 및 경고 처리
                 if not ssl_config['verify']:
+                    if SSL_CONFIG.get("log_ssl_bypass", True):
+                        print(f"[Warning] ⚠️ WoRMS AphiaRecord - SSL 검증 우회 사용 중")
                     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 
-                response = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT, **ssl_config)
+                response = requests.get(
+                    url, 
+                    headers=DEFAULT_HEADERS, 
+                    timeout=REQUEST_TIMEOUT, 
+                    verify=ssl_config['verify']
+                )
                 response.raise_for_status()
+                
+                # 성공 로깅
+                if ssl_config['verify']:
+                    print(f"[Debug] ✅ WoRMS AphiaRecord 보안 연결 성공: {aphia_id}")
+                else:
+                    print(f"[Info] ⚠️ WoRMS AphiaRecord SSL 우회로 연결 성공: {aphia_id}")
+                
                 break  # 성공하면 루프 탈출
+                
             except requests.exceptions.SSLError:
+                print(f"[Debug] WoRMS SSL 오류: {ssl_config['description']}")
                 if ssl_config['verify']:
                     continue  # SSL 검증 실패시 다음 설정으로 시도
                 else:
                     raise  # SSL 우회도 실패하면 예외 발생
-            except Exception:
+            except Exception as e:
+                print(f"[Debug] WoRMS 연결 오류: {ssl_config['description']} - {type(e).__name__}")
                 if ssl_config['verify']:
                     continue  # 기타 오류시 다음 설정으로 시도
                 else:
@@ -372,3 +428,58 @@ def verify_species_list(species_list: List[str], check_cancelled: Optional[Calla
     
     print(f"[Debug WoRMS API] 검증 완료: 총 {len(results)}/{len(species_list)}개 항목 처리됨")
     return results
+
+def get_worms_data_with_fallback(scientific_name: str) -> Dict[str, Any]:
+    """
+    WoRMS API에서 학명 데이터를 가져옵니다. (보안 강화)
+    네트워크 오류 시 여러 방법으로 재시도합니다.
+    """
+    url = "https://www.marinespecies.org/rest/AphiaRecordsByName/" + scientific_name
+    params = {"like": "false", "marine_only": "false"}
+    
+    # SSL 설정 (보안 우선)
+    ssl_configs = [
+        {'verify': True, 'description': 'SSL 검증 활성화'}
+    ]
+    
+    # 기업 환경 지원이 활성화된 경우에만 SSL 우회 추가
+    if SSL_CONFIG.get("allow_insecure_fallback", False):
+        ssl_configs.append({
+            'verify': False, 
+            'description': 'SSL 검증 우회 (기업 환경)'
+        })
+    
+    for ssl_config in ssl_configs:
+        try:
+            # SSL 우회 사용 시 로깅
+            if not ssl_config['verify'] and SSL_CONFIG.get("log_ssl_bypass", True):
+                print(f"[Warning] ⚠️ WoRMS API - SSL 검증 우회 사용 중")
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
+            response = requests.get(
+                url, 
+                params=params, 
+                headers={'User-Agent': api_config.USER_AGENT},
+                timeout=api_config.WORMS_REQUEST_TIMEOUT,
+                verify=ssl_config['verify']
+            )
+            response.raise_for_status()
+            
+            # 성공 로깅
+            if ssl_config['verify']:
+                print(f"[Info] ✅ WoRMS API 보안 연결 성공")
+            else:
+                print(f"[Info] ⚠️ WoRMS API SSL 우회로 연결 성공")
+            
+            return response.json()
+            
+        except requests.exceptions.SSLError as e:
+            print(f"[Debug] WoRMS SSL 오류: {ssl_config['description']}")
+            continue
+        except Exception as e:
+            print(f"[Debug] WoRMS 연결 오류: {ssl_config['description']} - {type(e).__name__}")
+            continue
+    
+    # 모든 시도 실패
+    raise Exception("WoRMS API 연결 실패 - 모든 보안 연결 방법 시도 후 실패")

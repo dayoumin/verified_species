@@ -100,8 +100,10 @@ class UIConfig:
 
 # SSL/TLS 설정 정보
 SSL_CONFIG = {
-    "truststore_enabled": True,  # 기업/공공기관 네트워크 지원
-    "description": "truststore를 사용하여 OS 신뢰 저장소 기반 SSL 검증 수행"
+    "allow_insecure_fallback": True,  # 기업 환경 지원 (False로 설정하면 SSL 우회 비활성화)
+    "log_ssl_bypass": True,  # SSL 우회 사용 시 로깅
+    "prefer_secure": True,   # 항상 SSL 검증을 먼저 시도
+    "bypass_warning": True   # SSL 우회 시 사용자 알림 표시
 }
 
 # 기본 설정 인스턴스 생성
