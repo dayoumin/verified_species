@@ -52,10 +52,11 @@ def perform_verification(
     update_status: Callable[[str], None] = None,
     result_callback: Callable[[Dict[str, Any]], None] = None,
     check_cancelled: Callable[[], bool] = None,
-    realtime_mode: bool = False
+    realtime_mode: bool = False,
+    search_options: Dict[str, Any] = None
 ) -> List[Dict[str, Any]]:
     """
-    검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원)
+    검증 수행을 위한 브릿지 함수 (수정: 클래스 사용 복원, 하이브리드 검색 지원)
     
     Args:
         verification_list_input: 검증할 이름 목록
@@ -63,6 +64,8 @@ def perform_verification(
         update_status: 상태 메시지 업데이트 콜백
         result_callback: 개별 결과 업데이트 콜백
         check_cancelled: 취소 여부 확인 함수
+        realtime_mode: 실시간 모드 여부
+        search_options: 검색 옵션 (search_mode, cache_age_days 등)
         
     Returns:
         검증 결과 목록 (Fallback 시에만 의미 있음)
@@ -72,6 +75,89 @@ def perform_verification(
     if verification_list_input and len(verification_list_input) > 0:
         sample_items = verification_list_input[:min(5, len(verification_list_input))]
         print(f"[Debug Bridge perform_verification] 샘플 항목: {sample_items}")
+    
+    # 검색 옵션 처리
+    search_options = search_options or {}
+    search_mode = search_options.get("search_mode", "realtime")
+    cache_age_days = search_options.get("cache_age_days", 30)
+    
+    print(f"[Debug Bridge] 검색 모드: {search_mode}, 캐시 유효 기간: {cache_age_days}일")
+    
+    # 하이브리드 검색 모드일 때 캐시 매니저 사용
+    if search_mode == "cache":
+        try:
+            from species_verifier.database.hybrid_cache_manager import get_cache_manager
+            cache_manager = get_cache_manager()
+            
+            # 캐시에서 결과 조회 시도
+            cache_results = []
+            cache_misses = []
+            
+            for item in verification_list_input:
+                item_name = item[0] if isinstance(item, tuple) else item
+                cache_result = cache_manager.get_cache_result(item_name, "marine", cache_age_days)
+                
+                if cache_result:
+                    # 캐시 히트: 결과를 캐시 형식에서 표준 형식으로 변환
+                    standard_result = {
+                        'input_name': cache_result.input_name,
+                        'scientific_name': cache_result.scientific_name,
+                        'is_verified': cache_result.is_verified,
+                        'status': cache_result.status,
+                        'worms_id': cache_result.details.get('worms_id'),
+                        'worms_url': cache_result.details.get('worms_url'),
+                        'taxonomy': cache_result.details.get('classification'),
+                        'wiki_summary': cache_result.details.get('wiki_summary'),
+                        'last_verified_at': cache_result.last_verified_at.strftime('%Y-%m-%d %H:%M:%S'),
+                        'days_old': cache_result.days_old,
+                        'source': 'cache'
+                    }
+                    cache_results.append(standard_result)
+                    
+                    # 실시간 콜백 호출 (캐시 결과)
+                    if result_callback:
+                        result_callback(standard_result, "marine")
+                else:
+                    # 캐시 미스: 실시간 검색 대상 추가
+                    cache_misses.append(item)
+            
+            print(f"[Info Cache] 캐시 히트: {len(cache_results)}개, 캐시 미스: {len(cache_misses)}개")
+            
+            # 캐시 미스가 있을 때만 실시간 검색 수행
+            if cache_misses:
+                print(f"[Info Cache] {len(cache_misses)}개 항목에 대해 실시간 검색을 수행합니다")
+                # 실시간 검색 모드로 전환하여 재귀 호출
+                realtime_results = perform_verification(
+                    cache_misses, 
+                    update_progress=lambda progress, current, total: update_progress(
+                        (len(cache_results) + progress * len(cache_misses)) / len(verification_list_input),
+                        len(cache_results) + int(current or 0),
+                        len(verification_list_input)
+                    ) if update_progress else None,
+                    update_status=update_status,
+                    result_callback=lambda result, tab: (
+                        # 실시간 결과를 캐시에 저장
+                        cache_manager.save_realtime_result(result['input_name'], "marine", result),
+                        # 콜백 호출
+                        result_callback(result, tab) if result_callback else None
+                    ),
+                    check_cancelled=check_cancelled,
+                    realtime_mode=True,
+                    search_options={"search_mode": "realtime"}
+                )
+                
+                # 결과 병합
+                all_results = cache_results + (realtime_results or [])
+            else:
+                all_results = cache_results
+            
+            print(f"[Info Cache] 하이브리드 검색 완료: 총 {len(all_results)}개 결과")
+            return all_results
+            
+        except Exception as cache_e:
+            print(f"[Error Cache] 캐시 검색 중 오류 발생, 실시간 검색으로 폴백: {cache_e}")
+            # 캐시 오류 시 실시간 검색으로 폴백
+            search_mode = "realtime"
     
     # API 지연 시간 확인 및 조정
     from species_verifier.core.worms_api import API_DELAY
@@ -344,6 +430,15 @@ def process_file(file_path, korean_mode=False):
         List[str] 또는 List[Tuple[str, str]]: 추출된 학명 목록 또는 (한글명, 학명) 튜플 목록
     """
     print(f"[Info] 파일 '{file_path}' 처리 시작.")
+    
+    # 설정 값 가져오기
+    from species_verifier.config import app_config
+    MAX_FILE_LIMIT = app_config.MAX_FILE_PROCESSING_LIMIT
+    LARGE_WARNING = app_config.LARGE_FILE_WARNING_THRESHOLD
+    CRITICAL_WARNING = app_config.CRITICAL_FILE_WARNING_THRESHOLD
+    
+    print(f"[Info Security] 파일 처리 제한: 최대 {MAX_FILE_LIMIT}개")
+    print(f"[Info Security] 경고 임계값: {LARGE_WARNING}개 (일반), {CRITICAL_WARNING}개 (강력)")
 
     results = []
     file_extension = os.path.splitext(file_path)[1].lower()
@@ -424,6 +519,7 @@ def process_file(file_path, korean_mode=False):
                     if is_microbe_file:
                         print(f"[Info Bridge] 미생물 파일 '{file_path}' 처리 시작.")
                         print(f"[Info Bridge] 미생물.xlsx 파일 형식 감지, 특별 처리 적용")
+                        print(f"[Debug Bridge] DataFrame 크기: {df.shape}, 컬럼: {list(df.columns)}")
                         
                         # 콜럼 이름을 포함하여 모든 항목 추출
                         all_species = []
@@ -431,27 +527,39 @@ def process_file(file_path, korean_mode=False):
                         # 첫 번째 콜럼 이름 처리
                         first_col = df.columns[0]  # 첫 번째 콜럼 이름 가져오기
                         first_col_name = str(first_col).strip()
+                        print(f"[Debug Bridge] 첫 번째 콜럼 이름: '{first_col_name}'")
                         
                         # 콜럼 이름이 미생물 학명인지 확인
                         if first_col_name and ' ' in first_col_name and len(first_col_name) > 3 and first_col_name.lower() not in ['nan', 'none', '']:
                             # 첫 번째 항목으로 콜럼 이름 추가 (예: Escherichia coli)
                             all_species.append(first_col_name)
-                            print(f"[Debug Bridge] 콜럼 이름 추가: {first_col_name}")
+                            print(f"[Debug Bridge] ✅ 콜럼 이름 추가: {first_col_name}")
+                        else:
+                            print(f"[Debug Bridge] ❌ 콜럼 이름 제외: '{first_col_name}' (조건 불충족)")
                         
                         # 첫 번째 콜럼의 모든 행 처리
+                        print(f"[Debug Bridge] DataFrame 행 수 확인: {len(df)}")
                         for idx, row in df.iterrows():
                             try:
                                 value = str(row[first_col]).strip()
+                                print(f"[Debug Bridge] 행 {idx+1}: '{value}'")
                                 if value and value.lower() not in ['nan', 'none', ''] and ' ' in value and len(value) > 3:
                                     # 중복 방지
                                     if value not in all_species:
                                         all_species.append(value)
-                                        print(f"[Debug Bridge] 항목 추가: {value}")
+                                        print(f"[Debug Bridge] ✅ 항목 추가: {value}")
+                                    else:
+                                        print(f"[Debug Bridge] ⚠️ 중복 항목 제외: {value}")
+                                else:
+                                    print(f"[Debug Bridge] ❌ 항목 제외: '{value}' (조건 불충족)")
                             except Exception as e:
                                 print(f"[Debug Bridge] 항목 추출 중 오류: {e}")
                                 continue
                         
+                        print(f"[Debug Bridge] ===============================")
                         print(f"[Debug Bridge] 추출된 전체 미생물 수: {len(all_species)}")
+                        print(f"[Debug Bridge] 전체 목록: {all_species}")
+                        print(f"[Debug Bridge] ===============================")
                         
                         # 결과에 추가 - 모든 항목 유지
                         results = all_species
@@ -670,6 +778,25 @@ def process_file(file_path, korean_mode=False):
     if results:
         print(f"[Info Bridge] 최종 학명 샘플: {results[:min(5, len(results))]}")
     
+    # 🚨 대량 처리 경고 시스템 - API 차단 위험 방지
+    file_count = len(results)
+    if file_count > MAX_FILE_LIMIT:
+        print(f"[🚨 CRITICAL Security] 파일 크기가 제한을 초과했습니다!")
+        print(f"[🚨 CRITICAL Security] 요청: {file_count}개, 제한: {MAX_FILE_LIMIT}개")
+        print(f"[🚨 CRITICAL Security] API 차단 위험을 방지하기 위해 처리를 제한합니다.")
+        # 제한된 개수만 반환
+        results = results[:MAX_FILE_LIMIT]
+        print(f"[🚨 CRITICAL Security] {MAX_FILE_LIMIT}개로 제한하여 처리합니다.")
+    elif file_count > CRITICAL_WARNING:
+        print(f"[⚠️ WARNING Security] 대량 파일 처리 경고!")
+        print(f"[⚠️ WARNING Security] {file_count}개 처리 시 API 차단 위험이 있습니다.")
+        print(f"[⚠️ WARNING Security] 예상 처리 시간: 약 {file_count * 3 / 60:.1f}분")
+        print(f"[⚠️ WARNING Security] LPSN 계정 차단 위험이 가장 높습니다.")
+    elif file_count > LARGE_WARNING:
+        print(f"[ℹ️ INFO Security] 중간 규모 파일 처리")
+        print(f"[ℹ️ INFO Security] {file_count}개 처리 시 약 {file_count * 2 / 60:.1f}분 소요 예상")
+        print(f"[ℹ️ INFO Security] API 서버에 부하를 주지 않도록 천천히 처리됩니다.")
+    
     return results
 
 
@@ -733,9 +860,24 @@ def process_microbe_file(file_path: str) -> List[str]:
                 if len(df.columns) > 0:
                     names.extend([str(x).strip() for x in df.iloc[:, 0].dropna().tolist() if str(x).strip() and ' ' in str(x)])
         else:
-            # 헤더가 없는 경우
+            # 헤더가 없는 경우 - 콜럼 이름도 포함하여 처리
             if len(df.columns) > 0:
-                names.extend([str(x).strip() for x in df.iloc[:, 0].dropna().tolist() if str(x).strip() and ' ' in str(x)])
+                # 💡 콜럼 이름이 학명인지 확인하고 첫 번째 항목으로 추가
+                first_col_name = str(df.columns[0]).strip()
+                print(f"[Debug Bridge] 첫 번째 콜럼 이름 확인: '{first_col_name}'")
+                
+                # 콜럼 이름이 학명 형태인지 확인 (공백 포함, 2글자 이상)
+                if first_col_name and ' ' in first_col_name and len(first_col_name) > 2 and first_col_name.lower() not in ['nan', 'none', '']:
+                    names.append(first_col_name)
+                    print(f"[Debug Bridge] ✅ 콜럼 이름을 첫 번째 학명으로 추가: {first_col_name}")
+                else:
+                    print(f"[Debug Bridge] ❌ 콜럼 이름 제외: '{first_col_name}' (조건 불충족)")
+                
+                # 데이터 행들에서 학명 추출
+                data_names = [str(x).strip() for x in df.iloc[:, 0].dropna().tolist() if str(x).strip() and len(str(x).strip()) > 2]
+                names.extend(data_names)
+                print(f"[Debug Bridge] 헤더 없는 Excel에서 추출된 데이터 학명 수: {len(data_names)}")
+                print(f"[Debug Bridge] 콜럼 이름 포함 총 학명 수: {len(names)}")
         
         return names
     

@@ -43,6 +43,7 @@ class ColTabFrame(BaseTabFrame):
         self.file_entry_count = 0
         self.text_count_label = None
         self.file_count_label = None
+        self.search_mode_var = None
         super().__init__(parent, **kwargs)
         self.tab_name = "담수 등 전체생물(COL)"
         self._create_widgets()
@@ -185,10 +186,61 @@ class ColTabFrame(BaseTabFrame):
 
         self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 3. 검증 버튼 (적당한 크기로 중앙 배치)
+        # 3. 검색 모드 선택 섹션 (새로 추가)
+        search_mode_section = ctk.CTkFrame(self, corner_radius=8)
+        search_mode_section.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 15))
+        search_mode_section.grid_columnconfigure(0, weight=1)
+        
+        # 검색 모드 헤더
+        search_mode_header = ctk.CTkFrame(search_mode_section, fg_color="transparent")
+        search_mode_header.grid(row=0, column=0, sticky="ew", padx=15, pady=(15, 8))
+        search_mode_header.grid_columnconfigure(0, weight=0)
+        search_mode_header.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            search_mode_header,
+            text="🔍 검색 모드",
+            font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
+            text_color=self.COMMON_COLORS['header_text']
+        ).grid(row=0, column=0, sticky="w")
+        
+        # 검색 모드 컨트롤 프레임
+        search_controls_frame = ctk.CTkFrame(search_mode_section, fg_color="transparent")
+        search_controls_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
+        search_controls_frame.grid_columnconfigure(0, weight=1)
+        search_controls_frame.grid_columnconfigure(1, weight=0)
+        
+        # 검색 모드 라디오 버튼들
+        radio_frame = ctk.CTkFrame(search_controls_frame, fg_color="transparent")
+        radio_frame.grid(row=0, column=0, sticky="w")
+        
+        # 검색 모드 변수 초기화
+        self.search_mode_var = tk.StringVar(value="realtime")
+        
+        self.realtime_radio = ctk.CTkRadioButton(
+            radio_frame,
+            text="⚡ 실시간 검색",
+            variable=self.search_mode_var,
+            value="realtime",
+            font=ctk.CTkFont(family="Malgun Gothic", size=12),
+            command=self._on_search_mode_change
+        )
+        self.realtime_radio.grid(row=0, column=0, padx=(0, 20), sticky="w")
+        
+        self.cache_radio = ctk.CTkRadioButton(
+            radio_frame,
+            text="💾 DB 검색",
+            variable=self.search_mode_var,
+            value="cache",
+            font=ctk.CTkFont(family="Malgun Gothic", size=12),
+            command=self._on_search_mode_change
+        )
+        self.cache_radio.grid(row=0, column=1, sticky="w")
+        
+        # 4. 검증 버튼 (기존 row=2에서 row=3으로 이동)
         self.verify_button = ctk.CTkButton(
             self,
-            text="🔍 검증 시작",
+            text="🔍 실시간 검증 시작",
             font=ctk.CTkFont(family="Malgun Gothic", size=16, weight="bold"),
             width=200,
             height=45,
@@ -200,7 +252,7 @@ class ColTabFrame(BaseTabFrame):
             command=self._trigger_verify_callback,
             state="disabled"
         )
-        self.verify_button.grid(row=2, column=0, pady=(0, 15))
+        self.verify_button.grid(row=3, column=0, pady=(0, 15))
         self._update_input_count()
 
     def _update_input_count(self, *args):
@@ -279,7 +331,12 @@ class ColTabFrame(BaseTabFrame):
     def _trigger_verify_callback(self):
         """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
         text_input = self.entry.get("0.0", "end-1c").strip()
-        self.trigger_callback("on_search", text_input, "col")
+        search_mode = self.search_mode_var.get()
+        
+        # 검색 모드 정보를 포함하여 콜백 호출
+        self.trigger_callback("on_search", text_input, "col", {
+            "search_mode": search_mode
+        })
 
     def set_selected_file(self, file_path: str):
         """app.py에서 파일 경로와 항목 수를 설정하기 위해 호출하는 함수"""
@@ -376,3 +433,19 @@ class ColTabFrame(BaseTabFrame):
                 
         except Exception as e:
             print(f"[Error COL] 검증 버튼 상태 업데이트 중 오류: {e}")
+
+    def _on_search_mode_change(self):
+        """검색 모드 변경 시 호출되는 콜백"""
+        mode = self.search_mode_var.get()
+        if mode == "realtime":
+            # 실시간 모드: 유효 기간 비활성화, 버튼 텍스트 변경
+            self.verify_button.configure(text="🔍 실시간 검증 시작")
+        else:
+            # DB 모드: 유효 기간 활성화, 버튼 텍스트 변경
+            self.verify_button.configure(text="💾 DB 검색 시작")
+
+    def get_search_options(self):
+        """현재 검색 옵션을 반환"""
+        return {
+            "search_mode": self.search_mode_var.get()
+        }

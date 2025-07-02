@@ -19,12 +19,16 @@ class AppConfig:
     APP_NAME = "Species Verifier"
     APP_VERSION = "1.0.0"
     
-    # 파일 처리 관련
+    # 파일 처리 관련 - API 차단 위험 방지를 위해 대폭 감소
     MAX_DIRECT_INPUT_LIMIT = 10  # 직접 입력으로 처리할 수 있는 최대 항목 수 (20 -> 10으로 감소)
     REALTIME_PROCESSING_THRESHOLD = 10  # 실시간 처리 임계값 (이하는 실시간, 초과는 배치)
-    MAX_FILE_PROCESSING_LIMIT = 3000  # 한 번에 처리할 수 있는 최대 항목 수
-    BATCH_SIZE = 100  # 배치 처리 크기 - 서버 과부하 방지를 위해 적정 수준 유지
+    MAX_FILE_PROCESSING_LIMIT = 500  # 한 번에 처리할 수 있는 최대 항목 수 (3000 -> 500으로 대폭 감소, API 차단 위험 방지)
+    BATCH_SIZE = 50  # 배치 처리 크기 - API 부하 방지를 위해 감소 (100 -> 50)
     MAX_RESULTS_DISPLAY = 100  # 한 번에 표시할 수 있는 최대 결과 수
+    
+    # 대량 처리 경고 임계값 추가 (API 차단 위험 방지)
+    LARGE_FILE_WARNING_THRESHOLD = 100  # 100개 이상 시 경고 표시
+    CRITICAL_FILE_WARNING_THRESHOLD = 300  # 300개 이상 시 강력 경고 표시
     
     # 로깅 설정
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
@@ -51,13 +55,16 @@ class APIConfig:
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED = bool(GEMINI_API_KEY)
     
-    # API 요청 지연 시간 및 재시도 설정
-    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.2"))  # 배치 처리용 지연 시간 (1.5 -> 1.2초로 감소, API 방식 최적화)
-    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "0.6"))  # 실시간 처리 전용 지연 시간 (0.8 -> 0.6초로 감소, API 방식 최적화)
-    BATCH_DELAY = float(os.getenv("BATCH_DELAY", "3.0"))  # 배치간 지연 시간 (초) - 파일 처리용 유지
+    # API 요청 지연 시간 및 재시도 설정 - API 차단 위험 방지를 위해 대폭 증가
+    REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "2.0"))  # 배치 처리용 지연 시간 (1.2 -> 2.0초로 증가, API 차단 위험 방지)
+    REALTIME_REQUEST_DELAY = float(os.getenv("REALTIME_REQUEST_DELAY", "1.0"))  # 실시간 처리 전용 지연 시간 (0.6 -> 1.0초로 증가)
+    BATCH_DELAY = float(os.getenv("BATCH_DELAY", "5.0"))  # 배치간 지연 시간 (3.0 -> 5.0초로 증가, API 부하 방지)
     
-    # LPSN 웹 스크래핑 전용 지연 시간 (더 안전하게)
-    LPSN_REQUEST_DELAY = float(os.getenv("LPSN_REQUEST_DELAY", "1.8"))  # 웹 스크래핑용 지연 시간 (더 안전하게)
+    # LPSN API 전용 지연 시간 (계정 차단 위험이 가장 높음)
+    LPSN_REQUEST_DELAY = float(os.getenv("LPSN_REQUEST_DELAY", "3.0"))  # LPSN API 지연 시간 (1.8 -> 3.0초로 대폭 증가, 계정 차단 위험 방지)
+    
+    # 대량 처리 시 추가 보호 지연 시간
+    LARGE_BATCH_EXTRA_DELAY = float(os.getenv("LARGE_BATCH_EXTRA_DELAY", "2.0"))  # 100개 이상 시 추가 지연
     
     # 네트워크 안정성 설정 (외부망 환경을 위해 강화)
     REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "20"))  # HTTP 요청 타임아웃 (초) - 30 -> 20으로 감소 (빠른 실패)

@@ -34,10 +34,11 @@ class StatusBar(BaseTkComponent):
         
         # 상태바 레이아웃 설정
         self.widget.grid_columnconfigure(0, weight=1)  # 상태 메시지 (확장)
-        self.widget.grid_columnconfigure(1, weight=0)  # 진행바
-        self.widget.grid_columnconfigure(2, weight=0)  # 진행률 텍스트
-        self.widget.grid_columnconfigure(3, weight=0)  # 저장 버튼
-        self.widget.grid_columnconfigure(4, weight=0)  # 취소 버튼
+        self.widget.grid_columnconfigure(1, weight=0)  # 통계 표시
+        self.widget.grid_columnconfigure(2, weight=0)  # 진행바
+        self.widget.grid_columnconfigure(3, weight=0)  # 진행률 텍스트
+        self.widget.grid_columnconfigure(4, weight=0)  # 저장 버튼
+        self.widget.grid_columnconfigure(5, weight=0)  # 취소 버튼
 
         # 상태 메시지 레이블
         self.status_label = ctk.CTkLabel(
@@ -48,6 +49,16 @@ class StatusBar(BaseTkComponent):
             width=400  # 고정 너비 설정
         )
         self.status_label.grid(row=0, column=0, padx=(10, 5), pady=5, sticky="w")
+        
+        # 통계 표시 레이블
+        self.stats_label = ctk.CTkLabel(
+            self.widget, 
+            text="", 
+            font=self.font, 
+            anchor="e",
+            width=120  # 고정 너비 설정
+        )
+        # 처음에는 숨김 (결과가 있을 때만 표시)
         
         # 진행률 텍스트 레이블
         self.progress_text_label = ctk.CTkLabel(
@@ -135,8 +146,8 @@ class StatusBar(BaseTkComponent):
         self.progressbar.configure(mode="determinate")
         self.progressbar.set(value)
         
-        # 진행바 표시 (상태 메시지 뒤에 바로 표시)
-        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        # 진행바 표시 (통계 뒤에 표시)
+        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
         
         # 현재 항목과 전체 항목 수가 있는 경우 텍스트 표시
         if current_item is not None and total_items is not None and total_items > 0:
@@ -148,7 +159,7 @@ class StatusBar(BaseTkComponent):
             self.progress_text_label.configure(text=f"{percentage}%")
         
         # 진행률 텍스트 표시 (진행바 뒤에 표시)
-        self.progress_text_label.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        self.progress_text_label.grid(row=0, column=3, padx=(5, 5), pady=5, sticky="e")
     
     def set_busy(self, status_text: Optional[str] = None):
         """바쁨 상태로 설정 (진행바, 취소 버튼 표시)"""
@@ -165,16 +176,19 @@ class StatusBar(BaseTkComponent):
         
         # 진행률 텍스트 초기화 및 표시
         self.progress_text_label.configure(text="0%")
-        self.progress_text_label.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
+        self.progress_text_label.grid(row=0, column=3, padx=(5, 5), pady=5, sticky="e")
 
         # 진행바 표시 및 설정
-        self.progressbar.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+        self.progressbar.grid(row=0, column=2, padx=(5, 5), pady=5, sticky="e")
         self.progressbar.configure(mode="indeterminate")
         self.progressbar.start()
+        
+        # 통계 숨김 (진행 중에는 표시하지 않음)
+        self.stats_label.grid_forget()
 
         # 취소 버튼 활성화 및 표시
         self.cancel_button.configure(state="normal")
-        self.cancel_button.grid(row=0, column=4, padx=(5, 10), pady=5, sticky="e")
+        self.cancel_button.grid(row=0, column=5, padx=(5, 10), pady=5, sticky="e")
     
     def set_ready(self, status_text: str = "입력 대기 중", show_save_button: bool = False):
         """준비 상태로 설정 (진행바, 취소 버튼 숨김, 조건부 저장 버튼 표시)"""
@@ -207,9 +221,43 @@ class StatusBar(BaseTkComponent):
         # 결과가 있는 경우 저장 버튼 표시
         if show_save_button:
             self.save_button.configure(state="normal")
-            self.save_button.grid(row=0, column=3, padx=(5, 10), pady=5, sticky="e")
+            self.save_button.grid(row=0, column=4, padx=(5, 10), pady=5, sticky="e")
         else:
             self.save_button.configure(state="disabled")
+    
+    def set_stats(self, success_count: int, fail_count: int, total_processed: int = None, duplicates_removed: int = None):
+        """
+        통계 설정
+        
+        Args:
+            success_count: 성공 개수
+            fail_count: 실패 개수
+            total_processed: 전체 처리된 학명 수 (선택사항)
+            duplicates_removed: 중복 제거된 학명 수 (선택사항)
+        """
+        print(f"[Debug StatusBar] set_stats 호출: 성공={success_count}, 실패={fail_count}, 전체={total_processed}, 중복제거={duplicates_removed}")
+        
+        if success_count == 0 and fail_count == 0:
+            # 통계가 없으면 숨김
+            self.stats_label.grid_forget()
+            print(f"[Debug StatusBar] 통계 숨김 (성공=0, 실패=0)")
+        else:
+            # 기본 통계 텍스트
+            stats_text = f"성공: {success_count}개, 실패: {fail_count}개"
+            
+            # 전체 처리 수와 중복 제거 정보 추가
+            if total_processed is not None and duplicates_removed is not None and duplicates_removed > 0:
+                displayed_count = success_count + fail_count
+                stats_text = f"전체 {total_processed}개 처리 → 중복 {duplicates_removed}개 제거 → {displayed_count}개 표시 (성공: {success_count}, 실패: {fail_count})"
+            elif total_processed is not None:
+                displayed_count = success_count + fail_count
+                if total_processed != displayed_count:
+                    stats_text = f"전체 {total_processed}개 → {displayed_count}개 표시 (성공: {success_count}, 실패: {fail_count})"
+            
+            self.stats_label.configure(text=stats_text)
+            # 통계 표시 (상태 메시지 뒤에 표시)
+            self.stats_label.grid(row=0, column=1, padx=(5, 5), pady=5, sticky="e")
+            print(f"[Debug StatusBar] 통계 표시: '{stats_text}'")
     
     def set_save_command(self, command: Callable):
         """'결과 저장' 버튼의 명령(콜백 함수)을 설정합니다."""

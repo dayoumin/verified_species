@@ -7,3 +7,8 @@ pandas
 wikipedia
 google-generativeai
 pyworms
+supabase
+pydantic
+python-dotenv
+lpsn>=1.0.0
+beautifulsoup4

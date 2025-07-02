@@ -131,6 +131,11 @@ class SpeciesVerifierApp(ctk.CTk):
         """초기화"""
         super().__init__()
         
+        # LPSN API 인증 설정 (앱 시작 시 직접 설정)
+        os.environ["LPSN_EMAIL"] = "fishnala@gmail.com"
+        os.environ["LPSN_PASSWORD"] = "2025lpsn"
+        print(f"[Info App] LPSN API 인증 정보 설정 완료: {os.environ.get('LPSN_EMAIL')}")
+        
         # 로깅 시작
         self.logger = get_logger()
         
@@ -141,6 +146,17 @@ class SpeciesVerifierApp(ctk.CTk):
         self.current_results_marine = []  # 해양생물 탭 결과
         self.current_results_microbe = []  # 미생물 탭 결과
         self.current_results_col = []     # 통합생물(COL) 탭 결과
+        
+        # 전체 처리 수 추적 변수 추가 (통계 표시용)
+        self.total_processed_marine = 0   # 해양생물 탭 전체 처리 수
+        self.total_processed_microbe = 0  # 미생물 탭 전체 처리 수
+        self.total_processed_col = 0      # COL 탭 전체 처리 수
+        
+        # 중복 제거 카운터 추가 (실제 중복 무시 횟수 추적)
+        self.duplicates_ignored_marine = 0   # 해양생물 탭 중복 무시 횟수
+        self.duplicates_ignored_microbe = 0  # 미생물 탭 중복 무시 횟수
+        self.duplicates_ignored_col = 0      # COL 탭 중복 무시 횟수
+        
         self.is_verifying = False # 현재 검증 작업 진행 여부 플래그
         self.is_cancelled = False # 작업 취소 요청 플래그 (추가)
         self.result_queue = queue.Queue() # 결과 처리를 위한 큐
@@ -504,34 +520,120 @@ class SpeciesVerifierApp(ctk.CTk):
             self._start_microbe_verification_thread(names_list, context=context, use_realtime=use_realtime)
         elif tab_name == "col":
             self._start_col_verification_thread(names_list, use_realtime=use_realtime)
+
+    def _search_species_with_options(self, input_text: str, tab_name: str = "marine", search_options: Dict[str, Any] = None):
+        """검색 옵션을 지원하는 직접 입력 학명 검색 콜백"""
+        if self.is_verifying:
+            self.show_centered_message("warning", "작업 중", "현재 다른 검증 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.")
+            return
+        
+        # 입력 텍스트 처리
+        if not input_text:
+            return
+            
+        input_text = input_text.strip()
+        # 모든 입력을 콤마로 구분된 리스트로 처리
+        names_list = [name.strip() for name in input_text.split(",") if name.strip()]
+        
+        if not names_list:
+            return
+        
+        # 직접 입력인 경우 context는 입력 리스트
+        context = names_list
+        
+        # 검색 옵션 처리
+        search_options = search_options or {}
+        search_mode = search_options.get("search_mode", "realtime")
+        
+        # 실시간 vs 배치 처리 결정 (검색 모드에 따라)
+        if search_mode == "cache":
+            # DB 검색 모드에서는 항상 실시간 처리 (캐시에서 빠르게 조회)
+            use_realtime = True
+            print(f"[Info] {tab_name} 탭: {len(names_list)}개 학명 DB 검색 처리 시작")
+        else:
+            # 실시간 검색 모드에서는 기존 로직 사용
+            from species_verifier.config import app_config
+            realtime_threshold = app_config.REALTIME_PROCESSING_THRESHOLD
+            use_realtime = len(names_list) <= realtime_threshold
+            
+            if use_realtime:
+                print(f"[Info] {tab_name} 탭: {len(names_list)}개 학명 실시간 처리 시작")
+            else:
+                print(f"[Info] {tab_name} 탭: {len(names_list)}개 학명 배치 처리 시작")
+        
+        # 탭에 따라 적절한 검증 스레드 시작 (검색 옵션 포함)
+        if tab_name == "marine":
+            self._start_verification_thread_with_options(names_list, use_realtime=use_realtime, search_options=search_options)
+        elif tab_name == "microbe":
+            # 미생물 탭은 context도 전달
+            self._start_microbe_verification_thread_with_options(names_list, context=context, use_realtime=use_realtime, search_options=search_options)
+        elif tab_name == "col":
+            self._start_col_verification_thread_with_options(names_list, use_realtime=use_realtime, search_options=search_options)
     
     # --- 해양생물 탭 콜백 함수 ---
-    def _marine_search(self, input_text: str, tab_name: str = "marine"):
-        """해양생물 검색 콜백"""
-        # 직접 입력이 있으면 직접 입력을 우선 사용
-        if input_text and input_text.strip():
-            # 직접 입력된 텍스트로 검증
-            self._search_species(input_text, tab_name="marine")
+    def _marine_search(self, input_text: str, tab_name: str = "marine", search_options: Dict[str, Any] = None):
+        """해양생물 검색 콜백 (하이브리드 검색 지원)"""
+        # 플레이스홀더 텍스트 목록 (실제 사용자 입력과 구분)
+        placeholder_texts = [
+            "예: Homo sapiens, Gadus morhua",
+            "해양 생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
+            self.placeholder_focused,
+            "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
+        ]
+        
+        # 실제 사용자 입력인지 확인 (플레이스홀더 텍스트 제외)
+        is_real_user_input = (input_text and input_text.strip() and 
+                             input_text.strip() not in placeholder_texts)
+        
+        # 검색 옵션 처리
+        search_options = search_options or {}
+        search_mode = search_options.get("search_mode", "realtime")
+        print(f"[Debug] 해양생물 검색 모드: {search_mode}")
+
+        if is_real_user_input:
+            # 실제 직접 입력된 텍스트로 검증
+            print(f"[Debug] 해양생물 직접 입력 처리: '{input_text}'")
+            self._search_species_with_options(input_text, tab_name="marine", search_options=search_options)
         elif hasattr(self, 'current_marine_names') and self.current_marine_names:
             # 직접 입력이 없고 파일에서 로드된 학명 목록이 있는 경우 파일 사용
-            self._start_verification_thread(self.current_marine_names)
+            print(f"[Debug] 해양생물 파일 입력 처리: {len(self.current_marine_names)}개 학명")
+            self._start_verification_thread_with_options(self.current_marine_names, search_options=search_options)
         else:
             # 둘 다 없으면 빈 입력으로 처리
-            self._search_species(input_text, tab_name="marine")
+            print(f"[Debug] 해양생물 빈 입력 처리")
+            self._search_species_with_options(input_text, tab_name="marine", search_options=search_options)
 
     # --- COL(통합생물) 탭 콜백 함수 ---
-    def _col_search(self, input_text: str, tab_name: str = "col"):
-        """COL 통합생물 검색 콜백"""
-        # 직접 입력이 있으면 직접 입력을 우선 사용
-        if input_text and input_text.strip():
-            # 직접 입력된 텍스트로 검증
-            self._search_species(input_text, tab_name="col")
+    def _col_search(self, input_text: str, tab_name: str = "col", search_options: Dict[str, Any] = None):
+        """COL 통합생물 검색 콜백 - 하이브리드 검색 지원"""
+        # 검색 옵션 가져오기
+        if search_options is None:
+            search_options = self.col_tab.get_search_options()
+        
+        # 플레이스홀더 텍스트 목록 (실제 사용자 입력과 구분)
+        placeholder_texts = [
+            "예: Homo sapiens, Gadus morhua",
+            "통합생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
+            self.placeholder_focused,
+            "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
+        ]
+        
+        # 실제 사용자 입력인지 확인 (플레이스홀더 텍스트 제외)
+        is_real_user_input = (input_text and input_text.strip() and 
+                             input_text.strip() not in placeholder_texts)
+        
+        if is_real_user_input:
+            # 실제 직접 입력된 텍스트로 검증 (검색 옵션 포함)
+            print(f"[Debug] COL 직접 입력 처리: '{input_text}' (모드: {search_options.get('mode', 'realtime')})")
+            self._search_species_with_options(input_text, tab_name="col", search_options=search_options)
         elif hasattr(self, 'current_col_names') and self.current_col_names:
             # 직접 입력이 없고 파일에서 로드된 학명 목록이 있는 경우 파일 사용
-            self._start_col_verification_thread(self.current_col_names)
+            print(f"[Debug] COL 파일 입력 처리: {len(self.current_col_names)}개 학명")
+            self._start_col_verification_thread_with_options(self.current_col_names, search_options=search_options)
         else:
             # 둘 다 없으면 빈 입력으로 처리
-            self._search_species(input_text, tab_name="col")
+            print(f"[Debug] COL 빈 입력 처리")
+            self._search_species_with_options(input_text, tab_name="col", search_options=search_options)
 
     def _col_file_browse(self):
         """COL 파일 선택 콜백. 파일을 선택하고 처리를 시작합니다."""
@@ -553,6 +655,11 @@ class SpeciesVerifierApp(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
+        
+        # 🚨 대량 처리 경고 시스템 - 파일 크기 미리 확인
+        if not self._check_file_size_and_warn(file_path, "통합생물"):
+            return  # 사용자가 취소한 경우
+        
         # 파일 처리 스레드 시작 - COL 전용 함수 사용
         threading.Thread(target=self._process_col_file, args=(file_path,), daemon=True).start()
 
@@ -572,28 +679,20 @@ class SpeciesVerifierApp(ctk.CTk):
         self._clear_file_cache("marine")
         self._clear_file_cache("microbe")
         
-        # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
-        self.current_file_item_count = 0
-        self.marine_file_item_count = 0
-        self.microbe_file_item_count = 0
-        
-        # 검증 중 플래그 설정
-        self.is_verifying = True
-        
-        # 전체 항목 수 저장 (진행률 표시용)
-        self.total_verification_items = len(verification_list)
-        # COL 탭용 별도 변수에도 저장
-        self.col_total_items = len(verification_list)
-        
-        # 다른 탭 변수 초기화
-        self.marine_total_items = 0
-        self.microbe_total_items = 0
-        
         # 새 검색 시작 시 기존 결과 지우기
         # 새 검색 시작 - COL 탭 기존 결과 지우기
         self.current_results_col.clear()
         if hasattr(self, 'result_tree_col') and self.result_tree_col:
             self.result_tree_col.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_col = len(verification_list)
+        # 중복 카운터 초기화
+        self.duplicates_ignored_col = 0
+        print(f"[Debug Stats] COL 탭 전체 처리 수 설정: {self.total_processed_col}")
+        
+        # 검증 중 플래그 설정
+        self.is_verifying = True
         
         # 처리 방식에 따른 진행 UI 표시
         processing_type = "실시간" if use_realtime else "배치"
@@ -865,23 +964,46 @@ class SpeciesVerifierApp(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
+        
+        # 🚨 대량 처리 경고 시스템 - 파일 크기 미리 확인
+        if not self._check_file_size_and_warn(file_path, "해양생물"):
+            return  # 사용자가 취소한 경우
+        
         # 파일 처리 스레드 시작
         threading.Thread(target=self._process_file, args=(file_path, "marine"), daemon=True).start()
     
     # --- 미생물 탭 콜백 함수 ---
-    def _microbe_search(self, input_text: str, tab_name: str = "microbe"):
-        """미생물 검색 콜백"""
-        # 직접 입력이 있으면 직접 입력을 우선 사용
-        if input_text and input_text.strip():
-            # 직접 입력된 텍스트로 검증
-            self._search_species(input_text, tab_name="microbe")
+    def _microbe_search(self, input_text: str, tab_name: str = "microbe", search_options: Dict[str, Any] = None):
+        """미생물 검색 콜백 - 하이브리드 검색 지원"""
+        # 검색 옵션 가져오기
+        if search_options is None:
+            search_options = self.microbe_tab.get_search_options()
+        
+        # 플레이스홀더 텍스트 목록 (실제 사용자 입력과 구분)
+        placeholder_texts = [
+            "예: Homo sapiens, Gadus morhua",
+            "미생물 이름을 입력하세요 (쉼표나 줄바꿈으로 구분)",
+            self.placeholder_focused,
+            "여러 학명은 콤마로 구분 (예: Paralichthys olivaceus, Anguilla japonica)"
+        ]
+        
+        # 실제 사용자 입력인지 확인 (플레이스홀더 텍스트 제외)
+        is_real_user_input = (input_text and input_text.strip() and 
+                             input_text.strip() not in placeholder_texts)
+        
+        if is_real_user_input:
+            # 실제 직접 입력된 텍스트로 검증 (검색 옵션 포함)
+            print(f"[Debug] 미생물 직접 입력 처리: '{input_text}' (모드: {search_options.get('mode', 'realtime')})")
+            self._search_species_with_options(input_text, tab_name="microbe", search_options=search_options)
         elif hasattr(self, 'current_microbe_names') and self.current_microbe_names:
             # 직접 입력이 없고 파일에서 로드된 학명 목록이 있는 경우 파일 사용
+            print(f"[Debug] 미생물 파일 입력 처리: {len(self.current_microbe_names)}개 학명")
             context = getattr(self, 'current_microbe_context', None)
-            self._start_microbe_verification_thread(self.current_microbe_names, context=context)
+            self._start_microbe_verification_thread_with_options(self.current_microbe_names, context=context, search_options=search_options)
         else:
             # 둘 다 없으면 빈 입력으로 처리
-            self._search_species(input_text, tab_name="microbe")
+            print(f"[Debug] 미생물 빈 입력 처리")
+            self._search_species_with_options(input_text, tab_name="microbe", search_options=search_options)
     
     def _microbe_file_browse(self):
         """미생물 파일 선택 콜백. 파일을 선택하고 처리를 시작합니다."""
@@ -904,6 +1026,10 @@ class SpeciesVerifierApp(ctk.CTk):
         if not file_path or not os.path.exists(file_path):
             self.show_centered_message("error", "파일 오류", "파일을 찾을 수 없습니다.")
             return
+        
+        # 🚨 대량 처리 경고 시스템 - 파일 크기 미리 확인
+        if not self._check_file_size_and_warn(file_path, "미생물"):
+            return  # 사용자가 취소한 경우
             
         # 파일 처리 스레드 시작 (파일 경로를 컨텍스트로 전달)
         threading.Thread(target=self._process_microbe_file, args=(file_path,), daemon=True).start()
@@ -1053,26 +1179,17 @@ class SpeciesVerifierApp(ctk.CTk):
         self._clear_file_cache("microbe")
         self._clear_file_cache("col")
         
-        # 파일 항목 수 초기화 (이전 값이 남아있지 않도록)
-        self.current_file_item_count = 0
-        self.marine_file_item_count = 0
-        self.microbe_file_item_count = 0
-        self.col_file_item_count = 0
-        
-        # 전체 항목 수 초기화
-        self.total_verification_items = 0
-        
-        # 해양생물 탭 항목 수 설정
-        self.marine_total_items = len(verification_list)
-        # 다른 탭 변수 초기화
-        self.microbe_total_items = 0
-        self.col_total_items = 0
-        
         # 새 검색 시작 시 기존 결과 지우기
         # 새 검색 시작 - 해양생물 탭 기존 결과 지우기
         self.current_results_marine.clear()
         if hasattr(self, 'result_tree_marine') and self.result_tree_marine:
             self.result_tree_marine.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_marine = len(verification_list)
+        # 중복 카운터 초기화
+        self.duplicates_ignored_marine = 0
+        print(f"[Debug Stats] 해양생물 탭 전체 처리 수 설정: {self.total_processed_marine}")
         
         # 처리 방식에 따른 진행 UI 표시
         processing_type = "실시간" if use_realtime else "배치"
@@ -1084,6 +1201,52 @@ class SpeciesVerifierApp(ctk.CTk):
         threading.Thread(
             target=self._perform_verification,
             args=(verification_list, use_realtime),
+            daemon=True
+        ).start()
+
+        # 입력 필드 초기화
+        if self.marine_tab and self.marine_tab.entry:
+            self.marine_tab.entry.delete("0.0", tk.END)
+            self.marine_tab.entry.insert("0.0", self.marine_tab.initial_text)
+            self.marine_tab.entry.configure(text_color="gray")
+        if self.marine_tab:
+             self.marine_tab.file_path_var.set("") # 파일 경로 초기화 (버튼 상태도 업데이트됨)
+
+    def _start_verification_thread_with_options(self, verification_list, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """검색 옵션을 지원하는 해양생물 검증 스레드 시작"""
+        # 새로운 해양생물 검증 시작 - 다른 탭 캐시 정리
+        self._clear_file_cache("microbe")
+        self._clear_file_cache("col")
+        
+        # 새 검색 시작 시 기존 결과 지우기
+        self.current_results_marine.clear()
+        if hasattr(self, 'result_tree_marine') and self.result_tree_marine:
+            self.result_tree_marine.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_marine = len(verification_list)
+        # 중복 카운터 초기화
+        self.duplicates_ignored_marine = 0
+        print(f"[Debug Stats] 해양생물 탭 전체 처리 수 설정: {self.total_processed_marine}")
+        
+        # 검색 옵션 처리
+        search_options = search_options or {}
+        search_mode = search_options.get("search_mode", "realtime")
+        
+        # 처리 방식에 따른 진행 UI 표시
+        if search_mode == "cache":
+            processing_type = "DB 검색"
+        else:
+            processing_type = "실시간" if use_realtime else "배치"
+        
+        self._show_progress_ui(f"해양생물 {processing_type} 검증 준비 중...")
+        self._set_ui_state("disabled")
+        self.is_verifying = True # 검증 시작 플래그 설정
+        
+        # 검증 스레드 시작 (검색 옵션 포함)
+        threading.Thread(
+            target=self._perform_verification_with_options,
+            args=(verification_list, use_realtime, search_options),
             daemon=True
         ).start()
 
@@ -1232,6 +1395,78 @@ class SpeciesVerifierApp(ctk.CTk):
             if self.marine_tab:
                 self.after(0, lambda: self.marine_tab.focus_entry())
 
+    def _perform_verification_with_options(self, verification_list_input, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """검색 옵션을 지원하는 해양생물 검증 수행 (백그라운드 스레드에서 실행)"""
+        try:
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            
+            # 취소 확인 함수 정의
+            def check_cancelled():
+                return self.is_cancelled
+            
+            # 전체 항목 수 저장
+            self.total_verification_items = len(verification_list_input)
+            print(f"[Debug Marine] 전체 해양생물 항목 수 설정: {self.total_verification_items}")
+            
+            # 검색 옵션 처리
+            search_options = search_options or {}
+            search_mode = search_options.get("search_mode", "realtime")
+            
+            print(f"[Info Marine] 검색 모드: {search_mode}")
+            
+            # 결과 콜백 함수 정의
+            def result_callback_wrapper(result, tab_type):
+                if not self.is_cancelled:
+                    self.result_queue.put((result, tab_type))
+                    print(f"[Debug] 해양생물 {search_mode} 결과 추가: {result.get('input_name', '')}")
+            
+            # 브리지 함수 호출 (검색 옵션 포함)
+            from species_verifier.gui.bridge import perform_verification
+            
+            # 진행률 업데이트 함수
+            def progress_update(p, curr=None, total=None):
+                self.after(0, lambda: self.update_progress(
+                    p, curr, len(verification_list_input)
+                ))
+            
+            # 상태 메시지 업데이트 함수
+            def status_update(msg):
+                processing_type = "DB 검색" if search_mode == "cache" else "실시간"
+                self.after(0, lambda: self._update_progress_label(f"{processing_type}: {msg}"))
+            
+            # 검증 수행
+            batch_results = perform_verification(
+                verification_list_input,
+                update_progress=progress_update,
+                update_status=status_update,
+                result_callback=result_callback_wrapper,
+                check_cancelled=check_cancelled,
+                realtime_mode=(search_mode == "realtime"),
+                search_options=search_options
+            )
+            
+            print(f"[Info Marine] 하이브리드 검색 완료: {len(verification_list_input)}개 항목")
+            
+            if not self.is_cancelled:
+                # 검증 완료 후 파일 캐시 삭제
+                self.after(0, lambda: self._clear_file_cache("marine"))
+        
+        except Exception as e:
+            print(f"[Error _perform_verification_with_options] Error during verification: {e}")
+            import traceback
+            traceback.print_exc()
+            self.after(0, lambda: self.show_centered_message("error", "검증 오류", f"검증 중 오류 발생: {e}"))
+        finally:
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
+            
+            # 완료 후 포커스 설정은 유지
+            if self.marine_tab:
+                self.after(0, lambda: self.marine_tab.focus_entry())
+
     def _start_microbe_verification_thread(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False):
         """미생물 검증 스레드 시작"""
         # 새로운 미생물 검증 시작 - 다른 탭 캐시 정리
@@ -1243,6 +1478,12 @@ class SpeciesVerifierApp(ctk.CTk):
         self.current_results_microbe.clear()
         if hasattr(self, 'result_tree_microbe') and self.result_tree_microbe:
             self.result_tree_microbe.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_microbe = len(microbe_names_list)
+        # 중복 카운터 초기화
+        self.duplicates_ignored_microbe = 0
+        print(f"[Debug Stats] 미생물 탭 전체 처리 수 설정: {self.total_processed_microbe}")
         
         # 진행 UI 표시 (초기 메시지 개선)
         processing_type = "실시간" if use_realtime else "배치"
@@ -2207,6 +2448,8 @@ class SpeciesVerifierApp(ctk.CTk):
             # 상태바 업데이트 (저장 버튼 숨기기)
             if hasattr(self, 'status_bar'):
                 self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+                # 통계도 초기화 (0개, 0개)
+                self.status_bar.set_stats(0, 0)
                 
         except Exception as e:
             print(f"[Error Clear] 결과 지우기 중 오류: {e}")
@@ -2214,8 +2457,15 @@ class SpeciesVerifierApp(ctk.CTk):
 
     def _reset_status_ui(self):
         """UI 상태를 초기화하고 기본 상태로 되돌립니다."""
+        # 현재 탭의 결과 존재 여부 확인
+        results_exist = self._check_results_exist()
+        status_text = "검증 완료" if results_exist else "입력 대기 중"
+        
         if hasattr(self, 'status_bar'):
-            self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+            self.status_bar.set_ready(status_text=status_text, show_save_button=results_exist)
+            # 통계 업데이트도 함께 수행
+            self._update_all_stats()
+        
         self.is_verifying = False
         self.is_cancelled = False
         
@@ -2320,10 +2570,95 @@ class SpeciesVerifierApp(ctk.CTk):
                 if not any(r.get('input_name', '') == input_name for r in target_results_list):
                     target_results_list.append(result)
                     print(f"[Debug] 결과 추가됨 ({tab_type}): {input_name}, 현재 결과 수: {len(target_results_list)}")
+                    # 통계 업데이트
+                    self._update_stats_for_tab(tab_type)
                 else:
+                    # 중복 발견 시 카운터 증가
+                    if tab_type == "marine":
+                        self.duplicates_ignored_marine += 1
+                    elif tab_type == "microbe":
+                        self.duplicates_ignored_microbe += 1
+                    elif tab_type == "col":
+                        self.duplicates_ignored_col += 1
                     print(f"[Debug] 중복 결과 무시 ({tab_type}): {input_name}")
+                    # 중복이 발견되어도 통계는 업데이트 (중복 카운터 반영을 위해)
+                    self._update_stats_for_tab(tab_type)
         else:
              print(f"[Error] Cannot update single result: Unknown tab_type '{tab_type}'")
+    
+    def _update_stats_for_tab(self, tab_type: str):
+        """탭별 통계 업데이트"""
+        try:
+            # 현재 탭의 결과 및 전체 처리 수, 중복 무시 횟수 가져오기
+            if tab_type == "marine":
+                results = self.current_results_marine
+                total_processed = self.total_processed_marine
+                duplicates_ignored = self.duplicates_ignored_marine
+            elif tab_type == "microbe":
+                results = self.current_results_microbe
+                total_processed = self.total_processed_microbe
+                duplicates_ignored = self.duplicates_ignored_microbe
+            elif tab_type == "col":
+                results = self.current_results_col
+                total_processed = self.total_processed_col
+                duplicates_ignored = self.duplicates_ignored_col
+            else:
+                return
+            
+            # 성공/실패 개수 계산
+            success_count = 0
+            fail_count = 0
+            
+            for result in results:
+                is_verified = result.get('is_verified', False)
+                if is_verified:
+                    success_count += 1
+                else:
+                    fail_count += 1
+            
+            # 현재 활성 탭인 경우에만 StatusBar 통계 업데이트
+            current_tab = self.tab_view.get()
+            should_update = False
+            
+            if tab_type == "marine" and current_tab == "해양생물(WoRMS)":
+                should_update = True
+            elif tab_type == "microbe" and current_tab == "미생물 (LPSN)":
+                should_update = True
+            elif tab_type == "col" and current_tab == "담수 등 전체생물(COL)":
+                should_update = True
+            
+            if should_update:
+                # 실제 중복 무시 횟수를 사용하여 통계 업데이트
+                self.status_bar.set_stats(
+                    success_count=success_count, 
+                    fail_count=fail_count,
+                    total_processed=total_processed if total_processed > 0 else None,
+                    duplicates_removed=duplicates_ignored if duplicates_ignored > 0 else None
+                )
+            
+        except Exception as e:
+            print(f"[Error] 통계 업데이트 중 오류: {e}")
+    
+    def _update_all_stats(self):
+        """현재 활성 탭의 통계 업데이트"""
+        try:
+            # 현재 활성 탭 확인
+            current_tab = self.tab_view.get()
+            
+            if current_tab == "해양생물(WoRMS)":
+                self._update_stats_for_tab("marine")
+            elif current_tab == "미생물 (LPSN)":
+                self._update_stats_for_tab("microbe")
+            elif current_tab == "담수 등 전체생물(COL)":  # 수정: 정확한 탭 이름 사용
+                self._update_stats_for_tab("col")
+            else:
+                # 탭 이름을 찾을 수 없는 경우 StatusBar 초기화
+                print(f"[Warning] 알 수 없는 탭: {current_tab}")
+                if hasattr(self, 'status_bar'):
+                    self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+                
+        except Exception as e:
+            print(f"[Error] 전체 통계 업데이트 중 오류: {e}")
 
     def _on_tab_change(self):
         """탭 변경 시 호출되는 콜백 함수"""
@@ -2343,10 +2678,17 @@ class SpeciesVerifierApp(ctk.CTk):
         print(f"[Debug Tab Change] Results exist in '{current_tab_name}': {results_exist}")
 
         # 상태 바 업데이트 (현재 탭 상태에 맞게)
-        # '검증 완료' 또는 '입력 대기 중' 메시지와 함께 저장 버튼 상태 업데이트
-        status_text = "검증 완료" if results_exist else "입력 대기 중"
         if hasattr(self, 'status_bar'):
-            self.status_bar.set_ready(status_text=status_text, show_save_button=results_exist)
+            if results_exist:
+                # 결과가 있는 경우: 검증 완료 상태와 통계 표시
+                self.status_bar.set_ready(status_text="검증 완료", show_save_button=True)
+                self._update_all_stats()
+                print(f"[Debug Tab Change] 탭 '{current_tab_name}'에 결과 있음 - 통계 업데이트")
+            else:
+                # 결과가 없는 경우: 입력 대기 상태와 빈 통계 표시
+                self.status_bar.set_ready(status_text="입력 대기 중", show_save_button=False)
+                self.status_bar.set_stats(success_count=0, fail_count=0, total_processed=0, duplicates_removed=0)
+                print(f"[Debug Tab Change] 탭 '{current_tab_name}'에 결과 없음 - 빈 통계 설정")
 
     def _reapply_tab_colors(self):
         """탭 색상을 간단하게 공통 적용하는 메서드"""
@@ -2720,20 +3062,321 @@ class SpeciesVerifierApp(ctk.CTk):
             self.current_microbe_names = []
         elif tab_type == "col":
             self.current_col_names = []
-
-    def _marine_search(self, input_text: str, tab_name: str = "marine"):
-        """해양생물 검색 콜백"""
-        print(f"[Debug] _marine_search 호출됨: input_text='{input_text[:50] if input_text else 'None'}', tab_name='{tab_name}'")
+    
+    def _check_file_size_and_warn(self, file_path: str, tab_name: str) -> bool:
+        """
+        파일 크기를 미리 확인하고 대량 처리 경고를 표시합니다.
         
-        # 파일에서 로드된 학명 목록이 있는 경우 우선 사용
-        if hasattr(self, 'current_marine_names') and self.current_marine_names:
-            print(f"[Debug] 해양생물 탭: 파일에서 로드된 {len(self.current_marine_names)}개 학명 사용")
-            self._start_verification_thread(self.current_marine_names)
-            # 사용 후 초기화하지 않음 (재사용 가능하도록)
+        Args:
+            file_path: 확인할 파일 경로
+            tab_name: 탭 이름 (예: "해양생물", "미생물", "통합생물")
+            
+        Returns:
+            bool: 계속 진행할지 여부 (True=계속, False=취소)
+        """
+        try:
+            # 설정 값 가져오기
+            from species_verifier.config import app_config
+            MAX_FILE_LIMIT = app_config.MAX_FILE_PROCESSING_LIMIT
+            LARGE_WARNING = app_config.LARGE_FILE_WARNING_THRESHOLD
+            CRITICAL_WARNING = app_config.CRITICAL_FILE_WARNING_THRESHOLD
+            
+            # 파일에서 학명 개수 미리 확인
+            file_ext = os.path.splitext(file_path)[1].lower()
+            estimated_count = 0
+            
+            if file_ext in ['.xlsx', '.xls']:
+                import pandas as pd
+                df = pd.read_excel(file_path, header=None)
+                # 첫 번째 컬럼의 비어있지 않은 항목 개수 추정
+                estimated_count = len(df.dropna(subset=[df.columns[0]]))
+            elif file_ext == '.csv':
+                import pandas as pd
+                df = pd.read_csv(file_path, header=None)
+                estimated_count = len(df.dropna(subset=[df.columns[0]]))
+            elif file_ext in ['.txt', '.tsv']:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                estimated_count = len([line for line in lines if line.strip()])
+            
+            print(f"[Info Security] 파일 '{file_path}' 예상 학명 수: {estimated_count}개")
+            
+            # 제한 초과 시 자동 차단
+            if estimated_count > MAX_FILE_LIMIT:
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "🚨 파일 크기 제한 초과",
+                    f"파일 크기가 제한을 초과했습니다!\n\n"
+                    f"파일 항목 수: {estimated_count}개\n"
+                    f"최대 허용 수: {MAX_FILE_LIMIT}개\n\n"
+                    f"API 차단 위험 방지를 위해 처리를 중단합니다.\n"
+                    f"파일을 {MAX_FILE_LIMIT}개 이하로 나누어 처리해주세요."
+                )
+                return False
+            
+            # 강력 경고 (300개 이상)
+            elif estimated_count > CRITICAL_WARNING:
+                from tkinter import messagebox
+                response = messagebox.askyesno(
+                    "⚠️ 대량 처리 강력 경고",
+                    f"대량 파일 처리로 인한 API 차단 위험이 있습니다!\n\n"
+                    f"탭: {tab_name}\n"
+                    f"파일 항목 수: {estimated_count}개\n"
+                    f"예상 처리 시간: 약 {estimated_count * 3 / 60:.1f}분\n\n"
+                    f"⚠️ 특히 LPSN 계정 차단 위험이 높습니다.\n"
+                    f"⚠️ WoRMS와 COL API도 모니터링 중입니다.\n\n"
+                    f"정말 계속 진행하시겠습니까?\n"
+                    f"(권장: 파일을 200개 이하로 나누어 처리)"
+                )
+                if not response:
+                    print(f"[Info Security] 사용자가 대량 처리를 취소했습니다.")
+                    return False
+                print(f"[Warning Security] 사용자가 대량 처리를 강행합니다: {estimated_count}개")
+            
+            # 일반 경고 (100개 이상)
+            elif estimated_count > LARGE_WARNING:
+                from tkinter import messagebox
+                response = messagebox.askyesno(
+                    "ℹ️ 중간 규모 파일 처리",
+                    f"중간 규모 파일을 처리합니다.\n\n"
+                    f"탭: {tab_name}\n"
+                    f"파일 항목 수: {estimated_count}개\n"
+                    f"예상 처리 시간: 약 {estimated_count * 2 / 60:.1f}분\n\n"
+                    f"API 서버에 부하를 주지 않도록 천천히 처리됩니다.\n"
+                    f"계속 진행하시겠습니까?"
+                )
+                if not response:
+                    print(f"[Info Security] 사용자가 중간 규모 처리를 취소했습니다.")
+                    return False
+                print(f"[Info Security] 사용자가 중간 규모 처리를 승인했습니다: {estimated_count}개")
+            
+            # 소규모 파일 (100개 미만) - 경고 없이 진행
+            else:
+                print(f"[Info Security] 소규모 파일 처리: {estimated_count}개 (경고 없음)")
+            
+            return True
+            
+        except Exception as e:
+            print(f"[Error Security] 파일 크기 확인 중 오류: {e}")
+            # 오류 발생 시에도 진행 허용 (기존 동작 유지)
+            return True
+
+    def _start_microbe_verification_thread_with_options(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """미생물 검증 스레드 시작 - 하이브리드 검색 지원"""
+        # 새로운 미생물 검증 시작 - 다른 탭 캐시 정리
+        self._clear_file_cache("marine")
+        self._clear_file_cache("col")
+        
+        # 새 검색 시작 시 기존 결과 지우기
+        self.current_results_microbe.clear()
+        if hasattr(self, 'result_tree_microbe') and self.result_tree_microbe:
+            self.result_tree_microbe.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_microbe = len(microbe_names_list)
+        self.duplicates_ignored_microbe = 0
+        print(f"[Debug Stats] 미생물 탭 전체 처리 수 설정: {self.total_processed_microbe}")
+        
+        # 검색 옵션 처리
+        search_options = search_options or {}
+        search_mode = search_options.get("mode", "realtime")
+        
+        # DB 검색 모드에서는 항상 실시간 처리 (캐시에서 빠르게 조회)
+        if search_mode == "cache":
+            use_realtime = True
+            processing_type = "DB 검색"
         else:
-            # 직접 입력된 텍스트로 검증
-            print(f"[Debug] 해양생물 탭: 직접 입력된 텍스트로 검증 시작")
-            self._search_species(input_text, tab_name="marine")
+            processing_type = "실시간" if use_realtime else "배치"
+        
+        # 진행 UI 표시
+        initial_msg = f"미생물 {processing_type} 준비 중..."
+        if isinstance(context, str):  # 파일 경로인 경우
+            initial_msg = f"파일 '{os.path.basename(context)}' {processing_type} 준비 중..."
+        elif isinstance(context, list):  # 직접 입력인 경우
+            initial_msg = f"입력된 {len(context)}개 학명 {processing_type} 중..."
+            
+        self._show_progress_ui(initial_msg)
+        self._set_ui_state("disabled")
+        self.is_verifying = True
+        
+        # 검증 스레드 시작 (검색 옵션 포함)
+        threading.Thread(
+            target=self._perform_microbe_verification_with_options,
+            args=(microbe_names_list, context, use_realtime, search_options),
+            daemon=True
+        ).start()
+
+        # 입력 필드 초기화
+        if self.microbe_tab and self.microbe_tab.entry:
+            self.microbe_tab.entry.delete("0.0", tk.END)
+            self.microbe_tab.entry.insert("0.0", self.microbe_tab.initial_text)
+            self.microbe_tab.entry.configure(text_color="gray")
+        if self.microbe_tab:
+            self.microbe_tab.file_path_var.set("")
+
+    def _perform_microbe_verification_with_options(self, microbe_names_list, context: Union[List[str], str, None] = None, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """미생물 검증 수행 (하이브리드 검색 지원)"""
+        try:
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            if hasattr(self, '_cancel_logged'):
+                delattr(self, '_cancel_logged')
+            
+            # 취소 확인 함수 정의
+            def check_cancelled():
+                return self.is_cancelled
+            
+            # 전체 항목 수 저장
+            self.total_verification_items = len(microbe_names_list)
+            print(f"[Debug Microbe] 전체 미생물 항목 수 설정: {self.total_verification_items}")
+            
+            # 검색 옵션 처리
+            search_options = search_options or {}
+            search_mode = search_options.get("mode", "realtime")
+            
+            print(f"[Bridge] 미생물 검색 모드: {search_mode}")
+            
+            # 결과 콜백 함수 정의
+            def result_callback_wrapper(result, tab_type):
+                if not self.is_cancelled:
+                    self.result_queue.put((result, 'microbe'))
+                    print(f"[Debug] 미생물 하이브리드 결과 추가: {result.get('input_name', '')}")
+            
+            # 진행률 업데이트 함수
+            def progress_update(p, curr=None, total=None):
+                self.after(0, lambda: self.update_progress(p, curr, total))
+            
+            def status_update(msg):
+                mode_prefix = "DB 검색" if search_mode == "cache" else "실시간"
+                self.after(0, lambda: self._update_progress_label(f"{mode_prefix}: {msg}"))
+            
+            # 하이브리드 검증 수행
+            from species_verifier.gui.bridge import perform_microbe_verification
+            batch_results = perform_microbe_verification(
+                microbe_names_list,
+                update_progress=progress_update,
+                update_status=status_update,
+                result_callback=result_callback_wrapper,
+                context=context,
+                check_cancelled=check_cancelled,
+                realtime_mode=(search_mode == "realtime")
+            )
+            
+            print(f"[Info Microbe] 하이브리드 검색 완료: {len(microbe_names_list)}개 항목")
+            
+        except Exception as e:
+            print(f"[Error _perform_microbe_verification_with_options] Error during verification: {e}")
+            import traceback
+            traceback.print_exc()
+
+        finally:
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
+            if hasattr(self, 'microbe_tab'):
+                self.after(0, lambda: self.microbe_tab.focus_entry())
+
+    def _start_col_verification_thread_with_options(self, verification_list, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """COL 검증 스레드 시작 - 하이브리드 검색 지원"""
+        # 새로운 COL 검증 시작 - 다른 탭 캐시 정리
+        self._clear_file_cache("marine")
+        self._clear_file_cache("microbe")
+        
+        # 새 검색 시작 시 기존 결과 지우기
+        self.current_results_col.clear()
+        if hasattr(self, 'result_tree_col') and self.result_tree_col:
+            self.result_tree_col.clear()
+        
+        # 전체 처리 수 설정 (통계 표시용)
+        self.total_processed_col = len(verification_list)
+        self.duplicates_ignored_col = 0
+        print(f"[Debug Stats] COL 탭 전체 처리 수 설정: {self.total_processed_col}")
+        
+        # 검색 옵션 처리
+        search_options = search_options or {}
+        search_mode = search_options.get("mode", "realtime")
+        
+        # DB 검색 모드에서는 항상 실시간 처리 (캐시에서 빠르게 조회)
+        if search_mode == "cache":
+            use_realtime = True
+            processing_type = "DB 검색"
+        else:
+            processing_type = "실시간" if use_realtime else "배치"
+        
+        # 검증 중 플래그 설정
+        self.is_verifying = True
+        
+        # 처리 방식에 따른 진행 UI 표시
+        self._show_progress_ui(f"COL {processing_type} 준비 중...")
+        self._set_ui_state("disabled")  # UI 비활성화
+        
+        # COL 하이브리드 검증 스레드 시작
+        import threading
+        thread = threading.Thread(target=self._perform_col_verification_with_options, args=(verification_list, use_realtime, search_options))
+        thread.daemon = True
+        thread.start()
+
+    def _perform_col_verification_with_options(self, verification_list, use_realtime: bool = False, search_options: Dict[str, Any] = None):
+        """COL 검증 수행 (하이브리드 검색 지원)"""
+        try:
+            # 취소 플래그 초기화
+            self.is_cancelled = False
+            
+            # 전체 항목 수 저장
+            self.total_verification_items = len(verification_list)
+            print(f"[Debug COL] 전체 COL 항목 수 설정: {self.total_verification_items}")
+            
+            # 검색 옵션 처리
+            search_options = search_options or {}
+            search_mode = search_options.get("mode", "realtime")
+            
+            print(f"[Bridge] COL 검색 모드: {search_mode}")
+            
+            # 취소 확인 함수 정의
+            def check_cancelled():
+                return self.is_cancelled
+            
+            # 결과 콜백 함수 정의
+            def result_callback_wrapper(result, tab_type):
+                if not self.is_cancelled:
+                    self.result_queue.put((result, 'col'))
+                    print(f"[Debug] COL 하이브리드 결과 추가: {result.get('input_name', '')}")
+            
+            # 진행률 업데이트 함수
+            def progress_update(p, curr=None, total=None):
+                self.after(0, lambda: self.update_progress(p, curr, total))
+            
+            def status_update(msg):
+                mode_prefix = "DB 검색" if search_mode == "cache" else "실시간"
+                self.after(0, lambda: self._update_progress_label(f"{mode_prefix}: {msg}"))
+            
+            # 하이브리드 검증 수행
+            from species_verifier.gui.bridge import perform_verification
+            batch_results = perform_verification(
+                verification_list,
+                tab_type="col",
+                progress_callback=progress_update,
+                status_callback=status_update,
+                result_callback=result_callback_wrapper,
+                check_cancelled=check_cancelled,
+                search_options=search_options
+            )
+            
+            print(f"[Info COL] 하이브리드 검색 완료: {len(verification_list)}개 항목")
+            
+        except Exception as e:
+            print(f"[Error _perform_col_verification_with_options] Error during verification: {e}")
+            import traceback
+            traceback.print_exc()
+            self.after(0, lambda: self.show_centered_message("error", "COL 검증 오류", f"COL 검증 중 오류 발생: {e}"))
+        finally:
+            # UI 상태 복원
+            self.after(0, lambda: self._reset_status_ui())
+            self.after(0, lambda: self._set_ui_state("normal"))
+            self.after(0, lambda: setattr(self, 'is_verifying', False))
+
+
 
 
 def run_app():

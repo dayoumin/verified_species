@@ -5,7 +5,6 @@ import requests
 import re
 import json
 import os
-import pyworms # WoRMS 검증을 위해 필요
 from bs4 import BeautifulSoup # LPSN 스크래핑에 필요
 import traceback
 from typing import Dict, Any, List, Callable, Optional
@@ -49,79 +48,42 @@ except ImportError:
 
 # clean_scientific_name 함수에 check_scientific_name 별칭 추가
 check_scientific_name = clean_scientific_name
-def verify_species_list(verification_list_input):
-    """
-    해양생물 목록을 검증하기 위한 래퍼 함수.
-    main_gui.py와의 호환성을 위해 verify_marine_species를 호출합니다.
 
-    Args:
-        verification_list_input: 학명 문자열 리스트 또는 (국명, 학명) 튜플 리스트
-
-    Returns:
-        검증 결과 목록
-    """
-    print(f"[Info Verifier Core] verify_species_list 호출됨 - verify_marine_species로 전달")
-    return verify_marine_species(verification_list_input)
+# 중복 래퍼 함수 제거 - worms_api.py의 verify_species_list를 직접 사용하도록 변경
+# def verify_species_list(verification_list_input):
+#     """
+#     해양생물 목록을 검증하기 위한 래퍼 함수.
+#     main_gui.py와의 호환성을 위해 verify_marine_species를 호출합니다.
+#     """
+#     print(f"[Info Verifier Core] verify_species_list 호출됨 - verify_marine_species로 전달")
+#     return verify_marine_species(verification_list_input)
 
 # --- 한글 국명 -> 학명 변환 관련 ---
 
 # --- 해양생물 검증 로직 (WoRMS) ---
 
+# check_worms_record 함수 제거됨 - worms_api.py의 verify_species_list 사용으로 대체
+
 def check_worms_record(scientific_name):
-    """주어진 학명에 대한 WoRMS 레코드를 확인하고 주요 정보를 반환합니다."""
-    if not scientific_name or scientific_name == '-':
-        return None # 검증 불가
-
-    print(f"[Info WoRMS Core] '{scientific_name}' WoRMS 레코드 확인 시작")
-    try:
-        # pyworms 사용 (네트워크 요청 발생)
-        # Fuzzy 매칭 시도 (aphiaRecordsByMatchNames 사용)
-        worms_results = pyworms.aphiaRecordsByMatchNames([scientific_name]) # 리스트로 전달
-
-        if not worms_results or not worms_results[0]:
-            print(f"[Warning WoRMS Core] '{scientific_name}'에 대한 WoRMS 결과 없음 (Fuzzy)")
-            # 이름으로 직접 검색 시도 (aphiaRecordsByName)
-            try:
-                 records_by_name = pyworms.aphiaRecordsByName(scientific_name)
-                 if records_by_name and isinstance(records_by_name, list) and len(records_by_name) > 0:
-                     record = records_by_name[0] # 이름 직접 검색 결과 사용
-                     print(f"[Info WoRMS Core] '{scientific_name}' 이름 직접 검색 성공")
-                 else:
-                     return None # 최종적으로 결과 없음
-            except Exception as name_err:
-                 print(f"[Warning WoRMS Core] '{scientific_name}' 이름 직접 검색 오류: {name_err}")
-                 return None
-        else:
-            # Fuzzy 매칭 결과 사용 (첫 번째 결과의 첫 번째 매치)
-            if worms_results[0]: # 결과가 있는지 확인
-                record = worms_results[0][0]
-            else:
-                print(f"[Warning WoRMS Core] Fuzzy 매칭 결과 구조 이상: {worms_results}")
-                return None
-
-        print(f"[Info WoRMS Core] '{scientific_name}' WoRMS 결과 찾음: ID={record.get('AphiaID')}")
+    """
+    호환성을 위한 래퍼 함수: worms_api.verify_single_species를 호출하고 
+    기존 check_worms_record와 호환되는 형식으로 결과를 변환합니다.
+    """
+    from .worms_api import verify_single_species
+    
+    result = verify_single_species(scientific_name)
+    
+    if 'error' in result:
+        return {'error': result['error']}
+    
+    # 기존 check_worms_record 형식으로 변환
         return {
-            'worms_id': record.get('AphiaID', '-'),
-            'scientific_name_provided_by_worms': record.get('scientificname', '-'), # WoRMS가 제공한 학명
-            'status': record.get('status', '-'),
-            'rank': record.get('rank', '-'),
-            'kingdom': record.get('kingdom', '-'),
-            'phylum': record.get('phylum', '-'),
-            'class': record.get('class', '-'),
-            'order': record.get('order', '-'),
-            'family': record.get('family', '-'),
-            'genus': record.get('genus', '-'),
-            'valid_name': record.get('valid_name', '-'), # 유효 학명
-            'valid_id': record.get('valid_AphiaID', '-'),
-            'url': record.get('url', '-')
-        }
-    except requests.exceptions.RequestException as req_err:
-         print(f"[Error WoRMS Core] '{scientific_name}' WoRMS 네트워크 오류: {req_err}")
-         return {'error': 'network_error', 'message': str(req_err)}
-    except Exception as e:
-        print(f"[Error WoRMS Core] '{scientific_name}' WoRMS 조회 중 예외 발생: {e}")
-        traceback.print_exc()
-        return {'error': 'exception', 'message': str(e)}
+        'worms_id': result.get('worms_id', '-'),
+        'scientific_name': result.get('scientific_name', scientific_name),
+        'status': 'valid' if result.get('is_verified', False) else 'not_found',
+        'url': result.get('worms_link', '-'),
+        'worms_status': result.get('worms_status', '-')
+    }
 
 def verify_marine_species(verification_list_input):
     """주어진 목록(학명 문자열 리스트 또는 (국명, 학명 or None) 튜플 리스트)을 처리합니다. (해양생물 WoRMS 검증)"""
@@ -133,100 +95,122 @@ def verify_marine_species(verification_list_input):
     total_items = len(verification_list_input)
     print(f"[Info Verifier Core] 해양생물 검증 시작: {total_items}개 항목, 국명 입력: {is_korean_search}")
 
+    # worms_api 임포트 및 확인
+    from .worms_api import verify_species_list as worms_verify_species_list
+    
+    # 학명 리스트 준비
+    scientific_names_for_worms = []
+    name_mapping = {}  # 원본 입력 -> 정리된 학명 매핑
+
     for i, item in enumerate(verification_list_input):
         korean_name = None
-        scientific_name_input = None # 사용자 또는 파일에서 입력된 이름
-        input_name_for_result = None # 결과 표시용 원본 입력
+        scientific_name_input = None
+        input_name_for_result = None
 
         # 입력 처리
         if is_korean_search:
             korean_name, scientific_name_mapped = item
             input_name_for_result = korean_name
-            scientific_name_input = scientific_name_mapped # 매핑된 학명 (없을 수 있음)
-            print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (국명): '{korean_name}' -> '{scientific_name_input or 'N/A'}'")
+            scientific_name_input = scientific_name_mapped
+            print(f"[Info Verifier Core] {i+1}/{total_items} 준비 중 (국명): '{korean_name}' -> '{scientific_name_input or 'N/A'}'")
         else:
             scientific_name_input = item
             input_name_for_result = scientific_name_input
-            print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (학명): '{scientific_name_input}'")
+            print(f"[Info Verifier Core] {i+1}/{total_items} 준비 중 (학명): '{scientific_name_input}'")
 
-        # 입력값 정리 (헬퍼 함수 사용)
-        # 국명 검색 시 학명이 없더라도 국명 자체는 정리할 필요 없음
+        # 입력값 정리
         cleaned_scientific_name = clean_scientific_name(scientific_name_input) if scientific_name_input else None
 
-        # 기본 결과 생성 (헬퍼 함수 사용)
-        # scientific_name 필드는 최종적으로 WoRMS가 제공하는 유효/표준 이름으로 채워짐
+        # 매핑 정보 저장
+        name_mapping[i] = {
+            'input_name_for_result': input_name_for_result,
+            'scientific_name_input': scientific_name_input,
+            'cleaned_scientific_name': cleaned_scientific_name,
+            'korean_name': korean_name
+        }
+        
+        # WoRMS 검증할 학명 리스트에 추가
+        if cleaned_scientific_name and cleaned_scientific_name != '-':
+            scientific_names_for_worms.append(cleaned_scientific_name)
+        else:
+            scientific_names_for_worms.append(None)  # 빈 자리 유지
+
+    # WoRMS 일괄 검증 (중복 제거)
+    print(f"[Info Verifier Core] WoRMS 일괄 검증 시작: {len([n for n in scientific_names_for_worms if n])}개 유효 학명")
+    valid_names = [n for n in scientific_names_for_worms if n]
+    if valid_names:
+        worms_results = worms_verify_species_list(valid_names)
+        # 결과를 학명별로 매핑
+        worms_dict = {result.get('input_name', ''): result for result in worms_results}
+    else:
+        worms_dict = {}
+
+    # 개별 결과 생성
+    for i, item in enumerate(verification_list_input):
+        mapping_info = name_mapping[i]
+        input_name_for_result = mapping_info['input_name_for_result']
+        cleaned_scientific_name = mapping_info['cleaned_scientific_name']
+        korean_name = mapping_info['korean_name']
+
+        # 기본 결과 생성
         result_entry = create_basic_marine_result(
             input_name_for_result,
-            cleaned_scientific_name or '-', # 초기 mapped_name은 정리된 입력 학명
-            False, # is_verified 초기값
-            '시작 전' # worms_status 초기값
+            cleaned_scientific_name or '-',
+            False,
+            '시작 전'
         )
 
+        # WoRMS 결과 적용
         worms_record = None
-        if cleaned_scientific_name and cleaned_scientific_name != '-':
-            worms_record = check_worms_record(cleaned_scientific_name)
+        if cleaned_scientific_name and cleaned_scientific_name in worms_dict:
+            worms_record = worms_dict[cleaned_scientific_name]
 
         if worms_record:
+            # worms_api.py의 결과 구조에 맞게 수정
             if 'error' in worms_record:
                 result_entry['is_verified'] = False
                 result_entry['worms_status'] = f"WoRMS 오류: {worms_record.get('error')}"
             else:
+                # worms_api.py 결과 구조에 맞게 필드 매핑
                 result_entry['worms_id'] = worms_record.get('worms_id', '-')
-                result_entry['worms_url'] = worms_record.get('url', '-')
-                worms_status = worms_record.get('status', '-')
+                result_entry['worms_url'] = worms_record.get('worms_link', '-')
+                worms_status = worms_record.get('worms_status', '-')
                 result_entry['worms_status'] = worms_status
-                worms_valid_name = worms_record.get('valid_name', '-')
-                worms_provided_name = worms_record.get('scientific_name_provided_by_worms', '-')
-
-                status_lower = str(worms_status).lower()
-                is_accepted = status_lower == 'accepted'
-                is_unaccepted_synonym = status_lower in ['unaccepted', 'alternate representation'] and worms_valid_name and worms_valid_name != '-'
-
-                if is_accepted:
+                
+                # worms_api.py는 is_verified로 검증 상태를 제공
+                if worms_record.get('is_verified', False):
                     result_entry['is_verified'] = True
-                    result_entry['scientific_name'] = worms_provided_name # WoRMS 제공 학명
-                    result_entry['mapped_name'] = worms_provided_name
-                elif is_unaccepted_synonym:
-                    result_entry['is_verified'] = False # 동의어/대체표현은 검증 실패로 간주
-                    result_entry['scientific_name'] = worms_valid_name # 유효 학명 표시
-                    result_entry['mapped_name'] = f"{worms_valid_name} (WoRMS 추천)"
-                    # 상태 명확화 (예: '동의어 (unaccepted)')
-                    result_entry['worms_status'] = f"동의어 ({worms_status})" if status_lower == 'unaccepted' else f"대체 표현 ({worms_status})"
+                    result_entry['scientific_name'] = worms_record.get('scientific_name', cleaned_scientific_name)
+                    result_entry['mapped_name'] = worms_record.get('scientific_name', cleaned_scientific_name)
                 else:
                     result_entry['is_verified'] = False
-                    result_entry['scientific_name'] = worms_provided_name # WoRMS 제공 이름
-                    result_entry['mapped_name'] = worms_provided_name
-                    # 상태가 있지만 accepted/unaccepted/alternate 가 아닌 경우 그대로 표시
-                    if not worms_status or worms_status == '-':
-                         result_entry['worms_status'] = 'WoRMS 상태 불명확'
+                    result_entry['scientific_name'] = worms_record.get('scientific_name', cleaned_scientific_name)
+                    if worms_record.get('similar_name') and worms_record['similar_name'] != '-':
+                        result_entry['mapped_name'] = f"{worms_record['similar_name']} (WoRMS 추천)"
+                    else:
+                        result_entry['mapped_name'] = worms_record.get('scientific_name', cleaned_scientific_name)
 
                 # 위키피디아 요약 검색
-                # 검색 우선순위: 1. 국명(입력 시) 2. 유효 학명 3. WoRMS 제공 학명 4. 원본 입력 학명
                 wiki_search_term = None
                 if is_korean_search and korean_name:
                     wiki_search_term = korean_name
                 elif result_entry.get('scientific_name') and result_entry['scientific_name'] != '-':
                     wiki_search_term = result_entry['scientific_name']
-                elif worms_provided_name and worms_provided_name != '-':
-                    wiki_search_term = worms_provided_name
                 elif cleaned_scientific_name and cleaned_scientific_name != '-':
                      wiki_search_term = cleaned_scientific_name
-                elif not is_korean_search and input_name_for_result:
-                     wiki_search_term = input_name_for_result # 최후의 수단: 원본 학명 입력
 
-                # 심층분석 결과는 현재 준비 중으로 설정 (향후 DeepSearch 기능 구현 예정)
+                # 심층분석 결과는 현재 준비 중으로 설정
                 if wiki_search_term:
                     print(f"[Info Verifier Core] '{wiki_search_term}' 심층분석 결과: 준비 중")
                     result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
                 else:
                     result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
 
-        else: # WoRMS 레코드를 찾지 못한 경우 (오류 포함)
+        else: # WoRMS 레코드를 찾지 못한 경우
             result_entry['is_verified'] = False
             if not cleaned_scientific_name or cleaned_scientific_name == '-':
                 if is_korean_search:
                      result_entry['worms_status'] = 'N/A (학명 없음)'
-                     # 심층분석 결과는 현재 준비 중으로 설정
                      if korean_name:
                            print(f"[Info Verifier Core] '{korean_name}'(학명 없음) 심층분석 결과: 준비 중")
                            result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
@@ -236,351 +220,114 @@ def verify_marine_species(verification_list_input):
                      result_entry['worms_status'] = '입력 오류'
                      result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
             else:
-                # WoRMS 조회 실패 또는 결과 없음
-                 result_entry['worms_status'] = result_entry.get('worms_status', 'WoRMS 결과 없음') # 오류 시 기존 상태 유지
-                 # 심층분석 결과는 현재 준비 중으로 설정
-                 print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 심층분석 결과: 준비 중")
-                 result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
+                result_entry['worms_status'] = 'WoRMS 결과 없음'
+                print(f"[Info Verifier Core] WoRMS 실패, '{cleaned_scientific_name}' 심층분석 결과: 준비 중")
+                result_entry['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
 
         results.append(result_entry)
-
-        # 서버 부하 방지를 위한 약간의 지연 (선택적)
-        time.sleep(0.1) # 0.1초 지연
 
     print(f"[Info Verifier Core] 해양생물 검증 완료: {len(results)}개 결과 생성")
     return results
 
 def verify_single_microbe_lpsn(microbe_name):
     """
-    LPSN(List of Prokaryotic names with Standing in Nomenclature) 웹사이트에서 미생물 학명을 검증합니다.
-    학명을 바로 URL로 변환하여 직접 종 페이지에 접근합니다.
-    
-    Args:
-        microbe_name: 검증할 미생물 학명 문자열
-        
-    Returns:
-        검증 결과를 포함한 디셔너리
+    LPSN API를 사용한 미생물 학명 검증 (fallback으로 웹 스크래핑 사용)
     """
-    print(f"[Info LPSN Core] LPSN 검증 시작: '{microbe_name}'")
     cleaned_name = clean_scientific_name(microbe_name)
     
-    # 기본 결과 디셔너리 구조 정의
+    # 기본 결과 구조
     base_result = {
         'input_name': microbe_name,
-        'scientific_name': cleaned_name if cleaned_name else microbe_name,
-        'is_verified': False,  # 기본값은 검증 실패
-        'valid_name': cleaned_name if cleaned_name else microbe_name,
-        'status': 'Not found in LPSN',
-        'taxonomy': 'Domain: Bacteria',
+        'scientific_name': cleaned_name,
+        'is_verified': False,
+        'valid_name': cleaned_name,
+        'status': 'LPSN 접근 실패',
+        'taxonomy': 'Domain: Bacteria (추정)',
         'lpsn_link': f"https://lpsn.dsmz.de/search?word={cleaned_name.replace(' ', '+')}",
-        'wiki_summary': '-',
+        'wiki_summary': '준비 중 (DeepSearch 기능 개발 예정)',
+        'korean_name': '-',
         'is_microbe': True
     }
-
-    if not cleaned_name or cleaned_name == '-':
-        print(f"[Warning LPSN Core] Invalid input after cleaning: '{microbe_name}'")
-        base_result['status'] = 'Invalid input'
-        return base_result
-
-    # 초기화
-    detail_soup = None
-    species_detail_url = None
     
+    # 1단계: LPSN API 시도 (인증 정보가 있는 경우)
     try:
-        # LPSN 웹 스크래핑을 위한 헤더 설정 (전용 지연 시간 적용)
-        # api_config를 직접 import하여 사용
-        from species_verifier.config import api_config as config_instance
+        import lpsn
+        import os
         
-        if config_instance is not None:
-            headers = config_instance.DEFAULT_HEADERS
-            request_delay = config_instance.LPSN_REQUEST_DELAY  # LPSN 전용 지연 시간 사용 (1.8초)
-            request_timeout = config_instance.REQUEST_TIMEOUT
-            print(f"[Info LPSN Core] LPSN 전용 지연 시간 적용: {request_delay}초")
-        else:
-            # fallback 기본값 사용
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            request_delay = 1.8  # LPSN 기본 지연 시간
-            request_timeout = 10
-            print("[Warning LPSN Core] config 인스턴스가 None이므로 기본값 사용")
+        # 환경변수에서 인증 정보 확인
+        lpsn_email = os.getenv("LPSN_EMAIL")
+        lpsn_password = os.getenv("LPSN_PASSWORD")
         
-        # 학명에서 종명 추출하여 직접 URL 생성 (예: Streptococcus parauberis -> streptococcus-parauberis)
-        genus_species = cleaned_name.lower().replace(' ', '-')
-        direct_species_url = f"https://lpsn.dsmz.de/species/{genus_species}"
-        search_url = f"https://lpsn.dsmz.de/search?word={cleaned_name.replace(' ', '+')}"  # search_url 정의 추가
-        print(f"[Info LPSN Core] 직접 접근 URL: {direct_species_url}")
-        print(f"[Info LPSN Core] 검색 URL: {search_url}")
+        print(f"[Debug LPSN] 환경변수 확인: email={lpsn_email}, password={'설정됨' if lpsn_password else '없음'}")
         
-        try:
-            # LPSN 전용 지연 시간 적용 (차단 방지)
-            import time
-            time.sleep(request_delay)
-            print(f"[Debug LPSN Core] {request_delay}초 지연 적용 완료")
+        if lpsn_email and lpsn_password:
+            print(f"[Info LPSN] API 인증으로 검증 시도: '{cleaned_name}'")
             
-            # 기업 네트워크 환경 대응: 이중 SSL 전략 적용
-            # SSL 설정 옵션들 (보안 우선)
-            ssl_configs = [
-                {'verify': True, 'description': 'SSL 검증 활성화'}   # 항상 먼저 시도
-            ]
+            client = lpsn.LpsnClient(lpsn_email, lpsn_password)
+            count = client.search(taxon_name=cleaned_name, correct_name='yes')
             
-            # 기업 환경 지원이 활성화된 경우에만 SSL 우회 추가
-            if SSL_CONFIG.get("allow_insecure_fallback", False):
-                ssl_configs.append({
-                    'verify': False, 
-                    'description': 'SSL 검증 우회 (기업 환경)'
-                })
-            
-            # User-Agent 목록 (브라우저 수준)
-            user_agents = [
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0'
-            ]
-            
-            direct_response = None
-            for ssl_idx, ssl_config in enumerate(ssl_configs):
-                for ua_idx, user_agent in enumerate(user_agents):
-                    try:
-                        config_desc = ssl_config['description']
-                        print(f"[Debug LPSN Core] {config_desc} + UA{ua_idx+1} 시도")
-                        
-                        # 재시도 시에만 지연 적용 (첫 번째 시도는 즉시)
-                        if ssl_idx > 0 or ua_idx > 0:
-                            time.sleep(0.3)  # 재시도 시 짧은 지연
-                        
-                        # SSL 우회 사용 시 필요한 경우에만 로깅
-                        if not ssl_config['verify']:
-                            pass  # 조용히 처리
-                        
-                        # 브라우저 수준 헤더 사용
-                        enhanced_headers = {
-                            'User-Agent': user_agent,
-                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                            'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                            'Accept-Encoding': 'gzip, deflate, br',
-                            'Connection': 'keep-alive',
-                            'Upgrade-Insecure-Requests': '1'
-                        }
-                        
-                        # 직접 URL 접근 시도
-                        direct_response = requests.get(
-                            direct_species_url, 
-                            headers=enhanced_headers,
-                            timeout=request_timeout,
-                            **ssl_config
-                        )
-                        direct_response.raise_for_status()  # 404 등의 오류 확인
-                        
-                        # 연결 성공 - 조용히 처리
-                        break  # 성공하면 탈출
-                        
-                    except requests.exceptions.SSLError:
-                        if ssl_config['verify']:
-                            continue  # 다음 설정으로 시도
-                        else:
-                            raise
-                    except requests.exceptions.HTTPError as e:
-                        if e.response.status_code in [403, 429]:
-                            continue  # 다른 User-Agent로 시도
-                        else:
-                            raise
-                    except Exception as e:
-                        continue
+            if count > 0:
+                # 모든 검색 결과를 수집하여 species 우선 선택
+                all_results = []
+                for entry in client.retrieve():
+                    if isinstance(entry, dict):
+                        all_results.append(entry)
                 
-                if direct_response is not None:
-                    break  # 성공했으면 SSL 루프 탈출
-            
-            if direct_response is None:
-                raise Exception("모든 연결 시도 실패")
-            
-            # 성공적으로 페이지에 접근했다면 상세 정보 파싱
-            species_detail_url = direct_species_url
-            detail_soup = BeautifulSoup(direct_response.text, 'html.parser')
-            
-            # 페이지 제목에서 학명 확인
-            title_elem = detail_soup.find('h1')
-            
-            # 공백을 유지하도록 strip=False로 변경하고 추가 전처리 수행
-            title_text_raw = title_elem.get_text(strip=False) if title_elem else ''
-            # 추가 공백 제거 및 여러 공백을 하나로 변환하되 단어 간 공백은 유지
-            title_text = ' '.join(title_text_raw.split())
-            print(f"[Debug LPSN Core] 원본 페이지 제목: '{title_text_raw}'")
-            print(f"[Debug LPSN Core] 처리된 페이지 제목: '{title_text}'")
-            print(f"[Debug LPSN Core] 비교할 학명: '{cleaned_name}'")
-            
-            # HTML 구조 분석
-            print(f"[Debug LPSN Core] HTML 구조: {title_elem}")
-            
-            # 강화된 비교 로직
-            # 학명에서 이탤릭체 태그가 제거되었을 수 있으므로 직접 추출
-            italicized_name = ''
-            if title_elem:
-                italic_elems = title_elem.find_all('i')
-                if len(italic_elems) >= 2:  # 보통 속명과 종명이 각각 <i> 태그로 감싸짐
-                    italicized_name = ' '.join([i.get_text(strip=True) for i in italic_elems])
-                    print(f"[Debug LPSN Core] 추출된 이탤릭체 학명: '{italicized_name}'")
-            
-            # 다양한 비교 방법 시도
-            contains_name = cleaned_name.lower() in title_text.lower()
-            contains_with_species = f"species {cleaned_name}".lower() in title_text.lower()
-            contains_genus_species = genus_species.replace('-', ' ') in title_text.lower()
-            # 이탤릭체에서 추출한 학명과 직접 비교 추가
-            contains_italicized = False
-            if italicized_name:
-                contains_italicized = cleaned_name.lower() == italicized_name.lower()
-            
-            print(f"[Debug LPSN Core] 학명 포함 여부: {contains_name}")
-            print(f"[Debug LPSN Core] 'Species+학명' 포함 여부: {contains_with_species}")
-            print(f"[Debug LPSN Core] 속명+종명 포함 여부: {contains_genus_species}")
-            print(f"[Debug LPSN Core] 이탤릭체 학명 일치 여부: {contains_italicized}")
-            
-            # 다양한 조건을 포함하여 확인 (이탤릭체 추출 비교 추가)
-            if title_elem and (contains_name or contains_with_species or contains_genus_species or 
-                               title_text.lower().endswith(cleaned_name.lower()) or contains_italicized):
-                print(f"[Info LPSN Core] 직접 URL에서 학명 발견: {title_elem.get_text(strip=True)}")
-                
-                # 분류학적 정보 추출
-                taxonomy_parts = []
-                taxonomy_section = detail_soup.find('div', class_='classification')
-                print(f"[Info LPSN Core] 직접 URL 접근 성공: {direct_species_url}")
-            else:
-                print(f"[Warning LPSN Core] 직접 URL에서 학명을 찾을 수 없음")
-                detail_soup = None
-                taxonomy_parts = []
-                taxonomy_section = None
-        except requests.exceptions.HTTPError as e:
-            # 404 등의 오류가 발생한 경우
-            print(f"[Warning LPSN Core] 직접 URL 접근 실패: {e}")
-            detail_soup = None
-            taxonomy_parts = []
-            taxonomy_section = None
-        except Exception as e:
-            print(f"[Error LPSN Core] 직접 URL 접근 중 오류 발생: {e}")
-            detail_soup = None
-            taxonomy_parts = []
-            taxonomy_section = None
-        # 분류학적 정보 추출
-        if taxonomy_section:
-            taxonomy_items = taxonomy_section.find_all('div', class_='classification-item')
-            for item in taxonomy_items:
-                rank_elem = item.find('div', class_='rank')
-                name_elem = item.find('div', class_='name')
-                if rank_elem and name_elem:
-                    rank = rank_elem.get_text(strip=True)
-                    name = name_elem.get_text(strip=True)
-                    if rank and name:
-                        taxonomy_parts.append(f"{rank}: {name}")
-        
-        # 학명 상태 추출 - 다양한 위치와 클래스를 시도하여 상태 정보 찾기
-        taxonomic_status = 'unknown'
-        
-        # 방법 1: .status 클래스 찾기
-        status_elem = detail_soup.find('div', class_='status') if detail_soup else None
-        if status_elem:
-            taxonomic_status = status_elem.get_text(strip=True)
-            print(f"[Info LPSN Core] 방법1에서 상태 추출: {taxonomic_status}")
-        
-        # 방법 2: 'Status:' 텍스트를 포함하는 요소 찾기
-        if taxonomic_status == 'unknown' and detail_soup:
-            status_labels = detail_soup.find_all(string=lambda text: 'status' in text.lower() if text else False)
-            for label in status_labels:
-                parent = label.parent
-                if parent and parent.next_sibling:
-                    status_text = parent.next_sibling.strip()
-                    if status_text:
-                        taxonomic_status = status_text
-                        print(f"[Info LPSN Core] 방법2에서 상태 추출: {taxonomic_status}")
+                # species 카테고리 우선 선택
+                best_entry = None
+                for entry in all_results:
+                    category = entry.get('category', '').lower()
+                    if category == 'species':
+                        best_entry = entry
                         break
-        
-        # 방법 3: 'Status' 또는 'Type' 등의 테이블에서 찾기
-        if taxonomic_status == 'unknown' and detail_soup:
-            table_rows = detail_soup.find_all('tr')
-            for row in table_rows:
-                cells = row.find_all('td')
-                if len(cells) >= 2:
-                    header = cells[0].get_text(strip=True).lower()
-                    if 'status' in header or 'type' in header:
-                        status_text = cells[1].get_text(strip=True)
-                        taxonomic_status = status_text
-                        print(f"[Info LPSN Core] 방법3에서 상태 추출: {taxonomic_status}")
-                        break
-        
-        # 검증 상태에 따라 기본값 설정 (학명 페이지를 찾았으면 'correct name')
-        if taxonomic_status == 'unknown' and detail_soup:
-            # 페이지를 찾았으나 상태를 추출하지 못한 경우 'correct name'으로 가정
-            taxonomic_status = 'correct name'
-            print(f"[Info LPSN Core] 상태를 찾을 수 없어 기본값 설정: {taxonomic_status}")
-        
-        print(f"[Info LPSN Core] 최종 추출된 상태: {taxonomic_status}")
-        
-        # 유효한 학명 추출 - 이탤릭체 태그에서 학명 추출 우선
-        title_elem = detail_soup.find('h1') if detail_soup else None
-        valid_name = cleaned_name
-        
-        if title_elem:
-            # 이탤릭체 태그에서 학명 추출 시도 (이 방법이 가장 정확함)
-            italic_elems = title_elem.find_all('i') if title_elem else []
-            if len(italic_elems) >= 2:
-                valid_name = ' '.join([i.get_text(strip=True) for i in italic_elems])
-                print(f"[Debug LPSN Core] 이탤릭체에서 학명 추출: {valid_name}")
-            else:
-                # 이탤릭체 태그가 없으면 전체 텍스트에서 추출
-                title_text = ' '.join(title_elem.get_text(strip=False).split())
-                # 'Species ' 접두사 제거
-                if title_text.lower().startswith('species '):
-                    valid_name = title_text[len('Species '):]
-                else:
-                    valid_name = title_text
-            print(f"[Info LPSN Core] 제목에서 학명 추출: {valid_name}")
-        
-        # 결과 업데이트
-        if detail_soup and species_detail_url:
-            # 링크가 UI에 표시될 때 잘리지 않도록 완전한 URL 저장
-            print(f"[Debug LPSN Core] 저장할 링크 URL: {species_detail_url}")
-            
-            # 'Species ' 접두사 제거
-            if valid_name.startswith('Species '):
-                valid_name = valid_name[len('Species '):]
                 
-            base_result.update({
-                'is_verified': True,  # 상세 페이지를 찾았으므로 검증 성공
-                'scientific_name': valid_name,
-                'valid_name': valid_name,
-                'status': taxonomic_status,
-                'taxonomy': ' | '.join(taxonomy_parts) if taxonomy_parts else 'Domain: Bacteria',
-                'lpsn_link': species_detail_url  # 완전한 URL 저장
-            })
-            
-            # 심층분석 결과는 현재 준비 중으로 설정 (향후 DeepSearch 기능 구현 예정)
-            print(f"[Info LPSN Core] '{valid_name}' 심층분석 결과: 준비 중")
-            base_result['wiki_summary'] = '준비 중 (DeepSearch 기능 개발 예정)'
+                # species가 없으면 첫 번째 결과 사용
+                if not best_entry and all_results:
+                    best_entry = all_results[0]
+                
+                if best_entry:
+                    # LPSN API 결과 파싱
+                    full_name = best_entry.get('full_name', cleaned_name)
+                    taxonomic_status = best_entry.get('lpsn_taxonomic_status', 'unknown')
+                    lpsn_url = best_entry.get('lpsn_address', f"https://lpsn.dsmz.de/search?word={cleaned_name.replace(' ', '+')}")
+                    is_legitimate = best_entry.get('is_legitimate', False)
+                    category = best_entry.get('category', 'species')
+                    
+                    # 검증 상태 결정
+                    is_verified = is_legitimate and 'correct name' in taxonomic_status.lower()
+                    
+                    print(f"[Info LPSN] '{cleaned_name}' → '{full_name}' (카테고리: {category}, 검증: {is_verified})")
+                    
+                    return {
+                        'input_name': microbe_name,
+                        'scientific_name': full_name,
+                        'is_verified': is_verified,
+                        'valid_name': full_name,
+                        'status': taxonomic_status,
+                        'taxonomy': f"Domain: Bacteria; {category}",
+                        'lpsn_link': lpsn_url,
+                        'wiki_summary': '준비 중 (DeepSearch 기능 개발 예정)',
+                        'korean_name': '-',
+                        'is_microbe': True
+                    }
+            else:
+                print(f"[Info LPSN] API 검색 결과 없음: '{cleaned_name}'")
         else:
-            print(f"[Warning LPSN Core] 종 페이지를 찾을 수 없음: {cleaned_name}")
-            base_result['is_verified'] = False
-            base_result['status'] = 'Not found in LPSN'
-            base_result['lpsn_link'] = f"https://lpsn.dsmz.de/search?word={cleaned_name.replace(' ', '+')}"
-        
-        # 결과 반환
-        return base_result
-    
-    except requests.exceptions.RequestException as e:
-        print(f"[Error LPSN Core] 요청 오류: {e}")
-        base_result['status'] = f'요청 오류: {str(e)[:50]}...'
-        base_result['lpsn_link'] = search_url
-        base_result['is_verified'] = False
-        base_result['valid_name'] = '유효하지 않음'
-        
+            print(f"[Info LPSN] API 인증 정보 없음, 스크래핑으로 전환")
+            
     except Exception as e:
-        print(f"[Error LPSN Core] 미생물 검증 중 오류: {e}")
-        traceback.print_exc()
-        base_result['status'] = f'오류: {str(e)[:50]}...'
-        base_result['lpsn_link'] = search_url
-        base_result['is_verified'] = False
-        base_result['valid_name'] = '유효하지 않음'
-        
-    # 최종 로그 출력
-    print(f"[Info LPSN Core] LPSN 검증 완료: '{microbe_name}' -> Status: {base_result['status']}")
+        print(f"[Error LPSN] API 검증 실패: {e}")
+    
+    # 2단계: 웹 스크래핑 fallback
+    try:
+        from .lpsn_scraper import verify_microbe_lpsn_scraping
+        scraping_result = verify_microbe_lpsn_scraping(microbe_name)
+        if scraping_result:
+            return scraping_result
+    except Exception as e:
+        print(f"[Error LPSN] 스크래핑도 실패: {e}")
+    
+    # 3단계: 기본 결과 반환
     return base_result
 
 
@@ -588,6 +335,7 @@ def verify_single_microbe_lpsn(microbe_name):
 def verify_col_species(col_names_list, result_callback=None):
     """
     COL(통합생물목록) API를 사용하여 학명을 검증합니다.
+    향상된 col_api.py의 단일 처리 함수를 활용하여 리스트를 일괄 처리합니다.
     
     Args:
         col_names_list: 검증할 학명 문자열 리스트
@@ -596,76 +344,42 @@ def verify_col_species(col_names_list, result_callback=None):
     Returns:
         각 학명에 대한 검증 결과 딕셔너리의 리스트
     """
-    import requests
-    import json
-    from urllib.parse import quote
+    from .col_api import verify_col_species as col_api_verify_single
     
     results = []
+    total_items = len(col_names_list)
+    print(f"[Info Verifier Core] COL 검증 시작: {total_items}개 항목")
     
-    for name in col_names_list:
+    for i, name in enumerate(col_names_list):
+        print(f"[Info Verifier Core] {i+1}/{total_items} 처리 중 (COL): '{name}'")
+        
         try:
-            # COL API 엔드포인트
-            base_url = "https://api.catalogueoflife.org/"
-            search_url = f"{base_url}dataset/3LR/nameusage/search?q={quote(name)}&limit=1"
+            # col_api.py의 향상된 단일 처리 함수 사용
+            single_result = col_api_verify_single(name)
             
-            # COL API 서버 부하 방지를 위한 지연 시간 추가 (config 값 사용)
-            if api_config is not None:
-                time.sleep(api_config.REQUEST_DELAY)
-                headers = api_config.DEFAULT_HEADERS
-                timeout = api_config.COL_REQUEST_TIMEOUT
-            else:
-                time.sleep(1.0)  # 기본 지연 시간
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-                timeout = 10  # 기본 타임아웃
+            # 백엔드 형식으로 통일 (기존 인터페이스 호환성 유지)
+            normalized_result = {
+                "input_name": single_result.get("input_name", name),
+                "scientific_name": single_result.get("scientific_name", name), 
+                "is_verified": single_result.get("is_verified", False),
+                "status": single_result.get("status", "unknown"),
+                "valid_name": single_result.get("scientific_name", name),  # COL에서는 scientific_name이 valid_name 역할
+                "taxonomy": single_result.get("심층분석 결과", "-"),  # 분류 정보가 있다면 매핑
+                "col_id": single_result.get("col_id", "-"),
+                "col_url": single_result.get("col_url", "-"),
+                "is_microbe": False
+            }
             
-            # COL API 요청 (config 값과 헤더 사용)
-            response = requests.get(
-                search_url, 
-                headers=headers,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            data = response.json()
+            results.append(normalized_result)
             
-            # 결과 파싱
-            if data.get('result') and len(data['result']) > 0:
-                result_data = data['result'][0]
-                col_id = result_data.get('id', '-')
-                status = result_data.get('status', 'unknown').capitalize()
-                
-                # COL 웹사이트 URL 생성
-                col_url = f"https://www.catalogueoflife.org/data/taxon/{col_id}"
-                
-                result = {
-                    "input_name": name,
-                    "scientific_name": result_data.get('name', name),
-                    "is_verified": status.lower() in ['accepted', 'provisionally accepted'],
-                    "status": status,
-                    "valid_name": result_data.get('acceptedName', {}).get('name', name),
-                    "taxonomy": _get_col_taxonomy(result_data),
-                    "col_id": col_id,
-                    "col_url": col_url,
-                    "is_microbe": False
-                }
-            else:
-                # 검색 결과가 없는 경우
-                result = {
-                    "input_name": name,
-                    "scientific_name": name,
-                    "is_verified": False,
-                    "status": "Not found in COL",
-                    "valid_name": name,
-                    "taxonomy": "-",
-                    "col_id": "-",
-                    "col_url": "-",
-                    "is_microbe": False
-                }
+            # 결과 콜백 호출
+            if result_callback:
+                result_callback(normalized_result)
                 
         except Exception as e:
-            # 오류 발생 시
-            result = {
+            print(f"[Error Verifier Core] COL 검증 중 오류: '{name}' - {e}")
+            # 오류 발생 시 기본 결과
+            error_result = {
                 "input_name": name,
                 "scientific_name": name,
                 "is_verified": False,
@@ -676,32 +390,15 @@ def verify_col_species(col_names_list, result_callback=None):
                 "col_url": "-",
                 "is_microbe": False
             }
+            results.append(error_result)
         
-        # 결과 추가
         if result_callback:
-            result_callback(result)
-        results.append(result)
+                result_callback(error_result)
     
+    print(f"[Info Verifier Core] COL 검증 완료: {len(results)}개 결과 생성")
     return results
 
-def _get_col_taxonomy(result_data):
-    """COL API 결과에서 분류학적 정보를 추출합니다."""
-    try:
-        classification = result_data.get('classification', [])
-        if not classification:
-            return "-"
-            
-        # 분류 정보를 계층별로 추출
-        ranks = []
-        for rank in ['kingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']:
-            for taxon in classification:
-                if taxon.get('rank', '').lower() == rank:
-                    ranks.append(f"{rank.capitalize()}: {taxon.get('name', '')}")
-                    break
-                    
-        return " | ".join(ranks) if ranks else "-"
-    except Exception:
-        return "-"
+# _get_col_taxonomy 함수 제거됨 - col_api.py에서 더 정교한 처리로 대체됨
 
 # --- 통합된 verify_microbe_species 함수 --- (취소 기능 추가)
 def verify_microbe_species(microbe_names_list: List[str], result_callback: Callable = None, check_cancelled: Callable[[], bool] = None):

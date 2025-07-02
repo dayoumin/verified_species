@@ -31,6 +31,8 @@ class ResultTreeview(BaseResultView):
         self.on_double_click = kwargs.pop('on_double_click', None)
         self.on_right_click_handler = kwargs.pop('on_right_click', None)
         self.on_motion = kwargs.pop('on_motion', None)
+        # 번호 카운터 추가
+        self.item_counter = 0
         super().__init__(parent, **kwargs)
         # 디버그 로그 추가
         print(f"[Debug ResultView] ResultTreeview initialized for tab: {self.tab_type}, on_right_click_handler exists: {callable(self.on_right_click_handler)}")
@@ -39,6 +41,8 @@ class ResultTreeview(BaseResultView):
         """위젯 생성"""
         # self.widget 생성 (CTkFrame)
         self.widget = ctk.CTkFrame(self.parent)
+        # 최소 높이 설정으로 ResultView가 보이도록 함
+        self.widget.configure(height=300)  # 최소 높이 300px 설정
 
         # self.widget 내부 레이아웃을 grid로 설정
         self.widget.grid_rowconfigure(0, weight=1)  # Treeview가 차지할 행
@@ -48,18 +52,19 @@ class ResultTreeview(BaseResultView):
         self.scrollbar_y = ctk.CTkScrollbar(self.widget, orientation="vertical")
         self.scrollbar_x = ctk.CTkScrollbar(self.widget, orientation="horizontal")
         
-        # Treeview 생성 (기존 코드 유지, 부모만 self.widget으로)
+        # Treeview 생성 (기존 코드 유지, 부모만 self.widget으로) - 번호 컬럼 추가
         columns = []
         if self.tab_type == "marine":
-            columns = ("mapped_name", "verified", "worms_status", "worms_id", "worms_url")
+            columns = ("no", "mapped_name", "verified", "worms_status", "worms_id", "worms_url")
         elif self.tab_type == "microbe":
-            columns = ("valid_name", "verified", "status", "taxonomy", "link")
+            columns = ("no", "valid_name", "verified", "status", "taxonomy", "link")
         elif self.tab_type == "col":
-            columns = ("valid_name", "verified", "col_status", "col_id", "col_url")
+            columns = ("no", "valid_name", "verified", "col_status", "col_id", "col_url")
             
         self.tree = ttk.Treeview(self.widget, columns=columns, show="headings", 
                                  yscrollcommand=self.scrollbar_y.set, 
-                                 xscrollcommand=self.scrollbar_x.set)
+                                 xscrollcommand=self.scrollbar_x.set,
+                                 height=15)  # Treeview 높이도 설정
         
         # --- 위젯 배치: grid 사용 --- 
         self.tree.grid(row=0, column=0, sticky="nsew")
@@ -70,9 +75,13 @@ class ResultTreeview(BaseResultView):
         self.scrollbar_y.configure(command=self.tree.yview)
         self.scrollbar_x.configure(command=self.tree.xview)
         
+        # 디버그 정보 출력
+        print(f"[Debug ResultView] 위젯 생성 완료 - 탭 타입: {self.tab_type}, 높이: 300px")
+        
         # 열 설정 (탭 유형에 따라 다름)
         if self.tab_type == "marine":
             # 열 헤더 설정
+            self.tree.heading("no", text="번호")
             self.tree.heading("mapped_name", text="학명")
             self.tree.heading("verified", text="검증")
             self.tree.heading("worms_status", text="WoRMS 상태")
@@ -80,14 +89,16 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("worms_url", text="WoRMS URL")
             
             # 열 너비 설정
-            self.tree.column("mapped_name", width=180, minwidth=120)
+            self.tree.column("no", width=50, minwidth=40, anchor='center')
+            self.tree.column("mapped_name", width=160, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("worms_status", width=150, minwidth=100, anchor='center')
-            self.tree.column("worms_id", width=100, minwidth=60, anchor='center')
-            self.tree.column("worms_url", width=150, minwidth=100)
+            self.tree.column("worms_status", width=130, minwidth=100, anchor='center')
+            self.tree.column("worms_id", width=80, minwidth=60, anchor='center')
+            self.tree.column("worms_url", width=130, minwidth=100)
             
         elif self.tab_type == "microbe":
             # 열 헤더 설정
+            self.tree.heading("no", text="번호")
             self.tree.heading("valid_name", text="학명")
             self.tree.heading("verified", text="검증")
             self.tree.heading("status", text="상태")
@@ -95,14 +106,16 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("link", text="LPSN 링크")
             
             # 열 너비 설정
-            self.tree.column("valid_name", width=180, minwidth=120)
+            self.tree.column("no", width=50, minwidth=40, anchor='center')
+            self.tree.column("valid_name", width=160, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("status", width=150, minwidth=100, anchor='center')
-            self.tree.column("taxonomy", width=300, minwidth=200)
-            self.tree.column("link", width=150, minwidth=100)
+            self.tree.column("status", width=130, minwidth=100, anchor='center')
+            self.tree.column("taxonomy", width=280, minwidth=200)
+            self.tree.column("link", width=130, minwidth=100)
         
         elif self.tab_type == "col":
             # 열 헤더 설정
+            self.tree.heading("no", text="번호")
             self.tree.heading("valid_name", text="학명")
             self.tree.heading("verified", text="검증")
             self.tree.heading("col_status", text="COL 상태")
@@ -110,11 +123,12 @@ class ResultTreeview(BaseResultView):
             self.tree.heading("col_url", text="COL URL")
             
             # 열 너비 설정
-            self.tree.column("valid_name", width=180, minwidth=120)
+            self.tree.column("no", width=50, minwidth=40, anchor='center')
+            self.tree.column("valid_name", width=160, minwidth=120)
             self.tree.column("verified", width=60, minwidth=50, anchor='center')
-            self.tree.column("col_status", width=150, minwidth=100, anchor='center')
-            self.tree.column("col_id", width=120, minwidth=70, anchor='center')
-            self.tree.column("col_url", width=180, minwidth=120)
+            self.tree.column("col_status", width=130, minwidth=100, anchor='center')
+            self.tree.column("col_id", width=100, minwidth=70, anchor='center')
+            self.tree.column("col_url", width=160, minwidth=120)
         
         # 태그 설정
         self.tree.tag_configure('verified', background='#e6ffe6')
@@ -162,6 +176,7 @@ class ResultTreeview(BaseResultView):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.results = []
+        self.item_counter = 0  # 번호 카운터 리셋
     
     def _display_result(self, result: Any, insert_at_index=tk.END):
         """
@@ -208,9 +223,18 @@ class ResultTreeview(BaseResultView):
             tag = 'verified'
         elif any(status in str(worms_status).lower() for status in ['alternate', 'synonym']):
             tag = 'caution'
+        
+        # 번호 증가 (insert_at_index가 0이면 맨 앞에 추가되므로 별도 처리)
+        if insert_at_index == 0:
+            self.item_counter += 1
+            item_no = self.item_counter
+        else:
+            self.item_counter += 1
+            item_no = self.item_counter
             
-        # 아이템 추가 (summary 컬럼 제거)
+        # 아이템 추가 (번호 컬럼 포함)
         self.tree.insert("", insert_at_index, text=input_name, values=(
+            item_no,
             mapped_name,
             "✓" if is_verified else "✗",
             worms_status,
@@ -274,9 +298,18 @@ class ResultTreeview(BaseResultView):
         
         # 디버그 로그 추가
         print(f"[Debug Microbe Result] 입력명: {input_name}, 검증결과: {is_verified}, 상태: {status}")
+        
+        # 번호 증가
+        if insert_at_index == 0:
+            self.item_counter += 1
+            item_no = self.item_counter
+        else:
+            self.item_counter += 1
+            item_no = self.item_counter
             
-        # 아이템 추가 (수정: display_name 사용)
+        # 아이템 추가 (번호 컬럼 포함)
         self.tree.insert("", insert_at_index, text=input_name, values=(
+            item_no,
             display_name, # valid_name 대신 display_name 사용
             "✓" if is_verified else "✗",
             status,
@@ -324,8 +357,17 @@ class ResultTreeview(BaseResultView):
         else:
             tag = 'unverified'
         
-        # 아이템 추가
+        # 번호 증가
+        if insert_at_index == 0:
+            self.item_counter += 1
+            item_no = self.item_counter
+        else:
+            self.item_counter += 1
+            item_no = self.item_counter
+        
+        # 아이템 추가 (번호 컬럼 포함)
         self.tree.insert("", insert_at_index, text=input_name, values=(
+            item_no,
             valid_name,
             "✓" if is_verified else "✗",
             col_status,

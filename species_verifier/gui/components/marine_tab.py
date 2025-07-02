@@ -65,6 +65,9 @@ class MarineTabFrame(BaseTabFrame):
         self.text_count_label = None
         self.file_count_label = None
         
+        # 검색 모드 변수 초기화
+        self.search_mode_var = tk.StringVar(value="realtime")
+        
         # BaseTabFrame 초기화 (parent 전달)
         super().__init__(parent, **kwargs) 
         self.tab_name = "해양생물(WoRMS)"
@@ -200,7 +203,10 @@ class MarineTabFrame(BaseTabFrame):
         
         self.file_path_var.trace_add("write", self._update_input_count)
 
-        # 3. 검증 버튼 (적당한 크기로 중앙 배치)
+        # 3. 검색 모드 선택 섹션
+        self._create_search_mode_section()
+
+        # 4. 검증 버튼 (적당한 크기로 중앙 배치)
         self.verify_button = ctk.CTkButton(
             self,
             text="🔍 검증 시작",
@@ -215,9 +221,54 @@ class MarineTabFrame(BaseTabFrame):
             command=self._trigger_verify_callback, 
             state="disabled"
         )
-        self.verify_button.grid(row=2, column=0, pady=(0, 15))
+        self.verify_button.grid(row=3, column=0, pady=(0, 15))
         
         self._update_input_count()
+
+    def _create_search_mode_section(self):
+        """검색 모드 선택 섹션 생성"""
+        # 🔍 검색 모드 섹션 (grid 레이아웃 사용)
+        search_mode_frame = ctk.CTkFrame(self, corner_radius=8)
+        search_mode_frame.grid(row=2, column=0, sticky="ew", padx=15, pady=(0, 8))
+        search_mode_frame.grid_columnconfigure(0, weight=1)
+        
+        # 검색 모드 제목
+        search_mode_title = ctk.CTkLabel(
+            search_mode_frame, 
+            text="🔍 검색 모드", 
+            font=ctk.CTkFont(family="Malgun Gothic", size=14, weight="bold"),
+            text_color=self.COMMON_COLORS['header_text']
+        )
+        search_mode_title.grid(row=0, column=0, sticky="w", padx=15, pady=(15, 8))
+        
+        # 검색 모드 선택 프레임
+        mode_selection_frame = ctk.CTkFrame(search_mode_frame, fg_color="transparent")
+        mode_selection_frame.grid(row=1, column=0, sticky="ew", padx=15, pady=(0, 15))
+        mode_selection_frame.grid_columnconfigure(0, weight=1)
+        
+        # 실시간 검색 라디오 버튼
+        self.realtime_radio = ctk.CTkRadioButton(
+            mode_selection_frame,
+            text="⚡ 실시간 검색 (정확한 최신 정보)",
+            variable=self.search_mode_var,
+            value="realtime",
+            font=self.font,
+            text_color=self.COMMON_COLORS['entry_text_normal'],
+            command=self._on_search_mode_change
+        )
+        self.realtime_radio.grid(row=0, column=0, sticky="w", pady=2)
+        
+        # DB 검색 라디오 버튼  
+        self.cache_radio = ctk.CTkRadioButton(
+            mode_selection_frame,
+            text="💾 DB 검색 (빠른 캐시 조회, 검증일자 확인 가능)",
+            variable=self.search_mode_var,
+            value="cache",
+            font=self.font,
+            text_color=self.COMMON_COLORS['entry_text_normal'],
+            command=self._on_search_mode_change
+        )
+        self.cache_radio.grid(row=1, column=0, sticky="w", pady=2)
 
     def _update_input_count(self, *args):
         """입력된 텍스트 및 파일의 항목 개수를 계산하고 UI를 업데이트합니다."""
@@ -296,10 +347,22 @@ class MarineTabFrame(BaseTabFrame):
         self.file_entry_count = 0
         self._update_input_count()
 
+    def _on_search_mode_change(self):
+        """검색 모드 변경 시 이벤트 처리"""
+        if self.search_mode_var.get() == "cache":
+            self.verify_button.configure(text="💾 DB 검색 시작")
+        else:
+            self.verify_button.configure(text="🔍 실시간 검증 시작")
+
     def _trigger_verify_callback(self):
         """검증 시작 버튼 클릭 시 항상 on_search 콜백 호출"""
         text_input = self.entry.get("0.0", "end-1c").strip()
-        self.trigger_callback("on_search", text_input, "marine")
+        search_mode = self.search_mode_var.get()
+        
+        # 검색 모드와 캐시 유효 기간 정보를 포함하여 콜백 호출
+        self.trigger_callback("on_search", text_input, "marine", {
+            "search_mode": search_mode
+        })
 
     def _update_verify_button_state(self, *args):
         """검증 버튼 활성화/비활성화 상태 업데이트"""
